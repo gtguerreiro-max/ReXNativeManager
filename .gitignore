@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+config.json
+config.json.tmp
+decky/node_modules/
+decky/dist/

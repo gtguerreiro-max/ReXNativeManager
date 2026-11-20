@@ -1,0 +1,11 @@
+{
+  "name": "Gestor ReXNative",
+  "author": "gtguerreiro-max",
+  "flags": [],
+  "api_version": 1,
+  "publish": {
+    "tags": ["rexnative", "xbox 360", "library"],
+    "description": "ReXNative Manager requests (the PC preparing games for the Deck) with their progress, a notice when a game is ready, and a button to open the Manager.",
+    "image": ""
+  }
+}

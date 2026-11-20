@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReXNative Manager</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header>
+  <h1><span>ReXNative</span> Manager <a href="#" id="ver" class="chip" onclick="openVersion();return false" title="Version and what changed"></a></h1>
+  <nav>
+    <button data-tab="games" class="on">My games</button>
+    <button data-tab="catalog">Catalogue</button>
+    <button data-tab="deck">Steam Deck</button>
+    <button data-tab="compat">Compatibility</button>
+    <button data-tab="storage">Storage</button>
+    <button data-tab="log" title="What changed in ReXNative">Changelog <span id="logcount" class="chip ok" hidden></span></button>
+    <button data-tab="jobs">Jobs <span id="jobcount" class="chip" hidden></span></button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <div id="status"></div>
+</header>
+<main>
+  <!-- Os meus jogos -->
+  <section class="tab on" id="tab-games">
+    <div class="row">
+      <input id="gfilter" class="grow" placeholder="Filter prepared games...">
+      <select id="gsort">
+        <option value="title">By name</option>
+        <option value="built">Built first</option>
+        <option value="deck">On the Deck first</option>
+        <option value="mc">Best score (Metacritic)</option>
+      </select>
+      <button class="b" onclick="loadGames()">Refresh</button>
+      <button class="b" onclick="rebuildOutdated()" title="Rebuild the games that lack the latest ReXNative fixes or the new SDK">Rebuild outdated</button>
+      <button class="b p" onclick="addOwnGame()" title="A dump folder, an .iso, a .7z/.zip/.rar or an Xbox Live package you have">Add your own game…</button>
+    </div>
+    <p class="muted small" id="groots"></p>
+    <div class="cards" id="gcards"></div>
+  </section>
+
+  <!-- Catálogo -->
+  <section class="tab" id="tab-catalog">
+    <div class="row">
+      <input id="cfilter" class="grow" placeholder="Search the catalogue (game name)...">
+      <label class="small"><input type="checkbox" id="conlynew"> only ones I don't have</label>
+      <label class="small"><input type="checkbox" id="conlydl"> downloaded only</label>
+      <label class="small" title="XNA games: ReXGlue can't run them yet (planned for later)"><input type="checkbox" id="chidebad"> hide XNA</label>
+      <select id="cgenre"><option value="">All genres</option></select>
+      <select id="csort">
+        <option value="title">By name</option>
+        <option value="mc">Best score (Metacritic)</option>
+        <option value="year">Newest</option>
+        <option value="size">Smallest</option>
+      </select>
+      <button class="b" onclick="loadCatalog(true)">Reload sources</button>
+      <button class="b" onclick="addOwnGame()" title="A dump folder, an .iso, a .7z/.zip/.rar or an Xbox Live package you have">Add your own game…</button>
+    </div>
+    <div class="row chips" id="csources" style="margin:10px 0"></div>
+    <div id="ctable"></div>
+
+    <h2>Search the Internet Archive</h2>
+    <p class="muted small">For a game that isn't in the sources above: search the whole archive and pick the file.</p>
+    <div class="row">
+      <input id="iaq" class="grow" placeholder="Game name (e.g. Halo 3)">
+      <label class="small"><input type="checkbox" id="iaxbox" checked> Xbox 360 only</label>
+      <button class="b p" onclick="iaSearch()">Search</button>
+    </div>
+    <div id="iaresults"></div>
+
+    <h2>Downloads on disk</h2>
+    <div id="dlfiles"></div>
+  </section>
+
+  <!-- Steam Deck -->
+  <section class="tab" id="tab-deck">
+    <div id="deckconn" class="panel"></div>
+    <div class="row" style="margin-top:14px">
+      <button class="b p" onclick="loadDeck(true)">Read the Deck now</button>
+      <button class="b" onclick="deckBatch('update')" title="Send to the Deck the newer build of every game that has one (one job, one at a time)">Update all on the Deck</button>
+      <button class="b" onclick="deckBatch('rebuild')" title="Rebuild with the latest ReXNative fixes, test and send every Deck game that lacks them (one job, one at a time)">Rebuild all on the Deck</button>
+      <span class="muted small" id="deckwhen"></span>
+    </div>
+    <div id="deckstate" style="margin-top:12px"></div>
+  </section>
+
+  <!-- Compatibilidade -->
+  <section class="tab" id="tab-compat">
+    <div class="row">
+      <input id="cfilter" class="grow" placeholder="Filter games...">
+      <button class="b" onclick="loadCompat()">Refresh</button>
+      <button class="b" onclick="compatCsv()">Export CSV</button>
+    </div>
+    <p class="muted small">Click a column to sort. Boot: the last boot test on the PC. Native vs classic and Deck settings: what the comparisons saw. XDK: the Direct3D version the game was built with.</p>
+    <div id="compatlist"></div>
+  </section>
+
+  <!-- Espaço -->
+  <section class="tab" id="tab-storage">
+    <div class="row"><button class="b p" onclick="diskScan()">Measure the game folders</button><span class="muted small" id="diskwhen"></span></div>
+    <div id="drives" style="margin-top:10px"></div>
+    <h3>Game folders</h3>
+    <div id="disklist"></div>
+    <h3>Downloaded archives</h3>
+    <div id="dllist"></div>
+  </section>
+
+  <!-- O registo do ReXNative -->
+  <section class="tab" id="tab-log">
+    <div class="loghead">
+      <div class="grow"><h2>ReXNative changelog</h2><div class="muted small" id="logsub">Reading…</div></div>
+      <button class="b" onclick="loadLog(true)" title="Fetch the latest ReXNative commits from GitHub now">Check GitHub now</button>
+    </div>
+    <div class="logbar">
+      <input id="logq" class="grow" placeholder="Search the changes (words, a game, a commit)…" oninput="logSearch()">
+      <select id="loggame" onchange="setLogGame(this.value === '' ? null : +this.value, 'mentions')"></select>
+    </div>
+    <div class="logbar chips" id="logareas"></div>
+    <div id="loggamebar"></div>
+    <div class="logwrap">
+      <div id="loglist"></div>
+      <aside class="logside" id="logside"></aside>
+    </div>
+  </section>
+
+  <!-- Tarefas -->
+  <section class="tab" id="tab-jobs">
+    <div class="row" style="margin-bottom:10px"><button class="b" onclick="testGamesDialog()">Test games…</button>
+      <span class="small muted">builds, tests and compares the chosen games one at a time, and tells you if any got worse</span></div>
+    <div id="joblist"></div>
+  </section>
+
+  <!-- Definições -->
+  <section class="tab" id="tab-settings">
+    <div id="lanpanel"></div>
+    <div id="settingsform"></div>
+  </section>
+</main>
+
+<div id="shade" onclick="closeDrawer()"></div>
+<aside id="drawer"><div class="head"><h2 id="dtitle"></h2><span class="grow"></span>
+  <button class="b" onclick="closeDrawer()">Close</button></div><div class="body" id="dbody"></div></aside>
+
+<dialog id="dlg"><div id="dlgbody"></div></dialog>
+<script src="/static/rexlog.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

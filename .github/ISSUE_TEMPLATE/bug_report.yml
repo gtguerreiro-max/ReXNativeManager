@@ -1,0 +1,55 @@
+name: Bug report
+description: Something in the app, Deck mode or the Decky plugin does not work as it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A game that does not build or draw right is a ReXNative problem: use the app's **Report a problem**, or ReXNative's **Game report** form. For a security problem, see [SECURITY.md](https://github.com/gtguerreiro-max/ReXNativeManager/blob/main/SECURITY.md): do not open a public issue.
+        **Do not attach anything from a game** (game files, saves, captures of the game) **or from your setup** (catalogue sources, paths, addresses, keys).
+  - type: dropdown
+    id: area
+    attributes:
+      label: Part
+      options:
+        - Catalogue and downloads
+        - Prepare, build and test
+        - AI assistant (fixes, reports)
+        - Steam Deck (install, update, delete)
+        - Deck mode (on the Deck)
+        - Decky plugin
+        - Changelog
+        - Linux builds (experimental)
+        - Settings, versions, updates
+        - Documentation
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what happened, and what you expected.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: How to reproduce it
+      description: The steps in the app.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: At the top of the page (for example v1.9.0).
+  - type: input
+    id: environment
+    attributes:
+      label: System
+      description: Windows version; the AI assistant you use; the Steam Deck's SteamOS and Decky versions, if it is about the Deck.
+  - type: textarea
+    id: log
+    attributes:
+      label: Log or output
+      description: For a failed job, its log (Jobs, open the job). Take out paths and addresses you do not want to share.
+      render: text

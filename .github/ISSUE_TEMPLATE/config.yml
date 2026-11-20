@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: A game does not build or draw right
+    url: https://github.com/gtguerreiro-max/ReXNative/issues/new?template=game_report.yml
+    about: That is ReXNative's (or use Report a problem in the app, which investigates it with the AI assistant).
+  - name: Security problem
+    url: https://github.com/gtguerreiro-max/ReXNativeManager/security/advisories/new
+    about: Report a vulnerability privately, not in a public issue.

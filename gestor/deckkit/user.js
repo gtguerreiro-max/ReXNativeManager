@@ -1,0 +1,35 @@
+// O Firefox do Gestor ReXNative no Deck: sem primeiras vezes, sem relatórios, sem restaurar
+// sessões; a página pode fechar a janela (o botão Sair), o ecrã inteiro sem avisos.
+user_pref("browser.shell.checkDefaultBrowser", false);
+user_pref("browser.startup.homepage_override.mstone", "ignore");
+user_pref("startup.homepage_welcome_url", "");
+user_pref("startup.homepage_welcome_url.additional", "");
+user_pref("browser.aboutwelcome.enabled", false);
+user_pref("trailhead.firstrun.didSeeAboutWelcome", true);
+user_pref("datareporting.policy.dataSubmissionEnabled", false);
+user_pref("datareporting.healthreport.uploadEnabled", false);
+user_pref("toolkit.telemetry.enabled", false);
+user_pref("toolkit.telemetry.unified", false);
+user_pref("app.shield.optoutstudies.enabled", false);
+user_pref("browser.sessionstore.resume_from_crash", false);
+user_pref("browser.sessionstore.max_resumed_crashes", 0);
+user_pref("dom.allow_scripts_to_close_windows", true);
+user_pref("browser.tabs.warnOnClose", false);
+user_pref("full-screen-api.warning.timeout", 0);
+user_pref("full-screen-api.transition-duration.enter", "0 0");
+user_pref("full-screen-api.transition-duration.leave", "0 0");
+user_pref("browser.translations.automaticallyPopup", false);
+user_pref("signon.rememberSignons", false);
+user_pref("browser.formfill.enable", false);
+user_pref("extensions.pocket.enabled", false);
+user_pref("browser.newtabpage.enabled", false);
+user_pref("browser.gesture.swipe.left", "");
+user_pref("browser.gesture.swipe.right", "");
+user_pref("ui.key.menuAccessKeyFocuses", false);
+user_pref("dom.gamepad.enabled", true);
+user_pref("media.autoplay.default", 0);
+user_pref("general.smoothScroll", true);
+user_pref("browser.download.useDownloadDir", true);
+user_pref("network.dns.disablePrefetch", true);
+user_pref("network.prefetch-next", false);
+user_pref("browser.region.update.enabled", false);

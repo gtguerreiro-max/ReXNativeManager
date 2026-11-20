@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReXNative Manager</title>
+<link rel="stylesheet" href="/static/deck.css">
+</head>
+<body>
+<div id="backdrop"><div></div><div></div></div>
+<div id="app">
+  <div id="top" class="hide">
+    <div id="brand"><small>MANAGER</small>Re<b>X</b>Native</div>
+    <div id="tabs">
+      <span class="glyph">L1</span>
+      <button class="tab" data-tab="deck">On Deck</button>
+      <button class="tab" data-tab="pc">On PC</button>
+      <button class="tab" data-tab="catalog">Catalogue</button>
+      <button class="tab" data-tab="log">Changelog<span class="n hide" id="logn"></span></button>
+      <button class="tab" data-tab="orders">Requests<span class="n hide" id="ordn"></span></button>
+      <span class="glyph">R1</span>
+    </div>
+    <div id="status"></div>
+  </div>
+  <div id="views">
+    <section class="view" id="v-boot"><div class="center"><div class="spin"></div><p>Connecting to the PC…</p></div></section>
+    <section class="view hide" id="v-deck"></section>
+    <section class="view hide" id="v-pc"></section>
+    <section class="view hide" id="v-catalog"></section>
+    <section class="view hide" id="v-log"></section>
+    <section class="view hide" id="v-orders"></section>
+    <section class="view hide" id="v-pair"></section>
+  </div>
+  <div id="hints"></div>
+</div>
+<div id="toasts"></div>
+<script src="/static/rexlog.js"></script>
+<script src="/static/deck.js"></script>
+</body>
+</html>
