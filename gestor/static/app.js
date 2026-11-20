@@ -365,7 +365,8 @@ function renderGames() {
   $('#gcards').innerHTML = gs.map(g => {
     const art = (g.art || []).includes('portrait') ? `style="background-image:url('/api/games/${encodeURIComponent(g.slug)}/art/portrait.png?v=${Math.round(g.built_at || 0)}')"` : '';
     return `<div class="card" onclick="openGame('${esc(g.slug)}')">
-      <div class="art" ${art}>${art ? '' : `<div class="ph">${esc(g.title)}</div>`}</div>
+      <div class="art" ${art}>${art ? '' : `<div class="ph">${esc(g.title)}</div>`}
+        ${g.built ? `<button class="b p playbtn" title="Play on this PC" onclick="event.stopPropagation();playSlug('${esc(g.slug)}', 'pc')">▶ Play</button>` : ''}</div>
       <div class="meta"><div class="t">${esc(g.title)}</div>
         ${g.info ? `<div class="small muted">${esc([genreTxt(g.info), g.info.year].filter(Boolean).join(' · '))}</div>` : ''}
         <div class="badges">${g.info ? mcChip(g.info.mc) : ''}${gameBadges(g)}</div></div></div>`;
@@ -386,6 +387,14 @@ async function openGame(slug, sub) {
   curSub = sub || curSub || 'resumo';
   openDrawer(cur.title);
   renderGame();
+}
+// Jogar: o executável compilado neste PC, ou o atalho do Steam no Deck.
+async function playSlug(slug, where) {
+  try {
+    const r = await api(`/api/games/${encodeURIComponent(slug)}/play`, { body: { where } });
+    if (where === 'deck') toast('Starting it on the Deck through Steam (follow it in Jobs)');
+    else toast(r.already ? `${r.title} is already open on this PC` : `Starting ${r.title} on this PC`);
+  } catch (e) { fail(e); }
 }
 function subtabs(names, on, fn) {
   return `<div class="subtabs">${names.map(([k, l]) => `<button class="${k === on ? 'on' : ''}" onclick="${fn}('${k}')">${l}</button>`).join('')}</div>`;
@@ -408,7 +417,12 @@ function gameSummary(g) {
   const boot = g.boot;
   const deckTxt = g.deck ? `${g.deck.where === 'sd' ? 'microSD card' : 'internal storage'} — ${gb(g.deck.size)}${g.deck.shortcut ? ', shortcut "' + esc(g.deck.shortcut.name) + '"' : ', no shortcut'}` : 'not installed';
   const pl = g.pipeline;
+  const onDeck = g.deck && g.deck.shortcut && g.deck.shortcut.appid;
   return `<div class="row">${gameBadges(g)}</div>
+  ${g.built || onDeck ? `<div class="row" style="margin-top:12px">
+    ${g.built ? `<button class="b p" onclick="playSlug('${esc(g.slug)}', 'pc')">▶ Play on this PC</button>` : ''}
+    ${onDeck ? `<button class="b" onclick="playSlug('${esc(g.slug)}', 'deck')" title="Through the Deck's Steam, like Play in Deck mode">▶ Play on the Deck</button>` : ''}
+    <span class="small muted">${g.built ? 'with the PC settings (F1 in the game opens the settings HUD)' : ''}</span></div>` : ''}
   ${g.unsupported ? `<div class="ev fail" style="margin-top:10px">${esc(g.unsupported_why || g.unsupported)}</div>` : ''}
   <div class="kv" style="margin-top:12px">
     ${g.info ? `<div>Genre</div><div>${esc(g.info.genres.join(', ') || '-')}</div>

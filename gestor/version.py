@@ -8,10 +8,19 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.10.0'
+VERSION = '1.11.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.11.1', '2026-11-20', [
+        'Restart and Update from GitHub refuse to restart when the code on disk does not compile (and '
+        'say where): restarting with a broken file left the app down until it was opened by hand.',
+    ]),
+    ('1.11.0', '2026-11-20', [
+        'Play from the PC app: "Play on this PC" on the game page and a Play button on each game card '
+        '(it starts the built game with the PC settings; a second press says it is already open), and '
+        '"Play on the Deck" for a game in the Steam library of the Deck (as Play in Deck mode).',
+    ]),
     ('1.10.0', '2026-11-20', [
         'Your own games, as you have them: a dump in a folder (with default.xex), a disc image (.iso), '
         'an archive (.7z, .zip, .rar) or an Xbox Live package. "Add your own game…" (My games, '

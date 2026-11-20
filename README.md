@@ -44,6 +44,8 @@ couch with the controller.
   Fixes from anyone who cannot push to ReXNative go back to it as pull requests.
 - **Up to date or not:** every build records the ReXNative commit and SDK it was made with; each
   game says which fixes it lacks, and **Rebuild outdated** brings them all up.
+- **Play:** on this PC (the game page, or the Play button on each card) or on the Deck through its
+  Steam, from the PC or from Deck mode.
 - **Steam Deck:** install (internal storage or microSD), update, delete with a backup of the saves,
   per-game settings, the Steam artwork, the library shortcuts.
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your

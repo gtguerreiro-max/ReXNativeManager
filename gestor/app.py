@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import threading
 import time
 
@@ -518,6 +519,46 @@ def game_detail(slug: str):
         g['unsupported'] = 'XNA'
         g['unsupported_why'] = xna.UNSUPPORTED_PT
     return g
+
+
+# -- jogar ---------------------------------------------------------------------------------------
+def _exe_running(exe):
+    """O jogo já está aberto neste PC? (pelo nome do executável, que é o do projeto)"""
+    try:
+        out = subprocess.run(['tasklist', '/FI', 'IMAGENAME eq %s' % os.path.basename(exe), '/FO', 'CSV', '/NH'],
+                             capture_output=True, text=True, timeout=10, creationflags=jobs.CREATE_NO_WINDOW).stdout
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return os.path.basename(exe).lower() in out.lower()
+
+
+@app.post('/api/games/{slug}/play')
+def game_play(slug: str, body: dict = Body(default={})):
+    """Jogar: where = 'pc' (o executável compilado, neste PC, com as definições do PC) ou 'deck' (o
+    atalho do Steam do Deck, como o Jogar do Modo Deck)."""
+    w = _work(slug)
+    g = games.info(w, deck.index())
+    if body.get('where') == 'deck':
+        sc = (g.get('deck') or {}).get('shortcut') or {}
+        if not sc.get('appid'):
+            raise HTTPException(400, 'it is not in the Deck\'s Steam library yet')
+        for j in manager.active(kind='deck-play'):
+            return _job(j)
+        return _job(manager.submit('deck-play', 'Play on the Deck: %s' % g['title'],
+                                   lambda job: deck.play_job(job, sc['appid'], sc.get('name') or g['title']),
+                                   lane='deck', game=slug))
+    if not g.get('built') or not g.get('exe'):
+        raise HTTPException(400, 'build it first')
+    for j in manager.active(game=slug):
+        if j.kind == 'pipeline':
+            raise HTTPException(409, 'the PC is building or testing this game now (job %s): play when it ends' % j.id)
+    exe = os.path.join(w, 'run', g['exe'] + '.exe')
+    if _exe_running(exe):
+        return {'ok': True, 'already': True, 'title': g['title']}
+    # Um processo à parte, no seu grupo: fica aberto se a app fechar.
+    subprocess.Popen([exe], cwd=os.path.dirname(exe), creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    return {'ok': True, 'already': False, 'title': g['title']}
 
 
 @app.post('/api/games/{slug}/pipeline')
@@ -1890,14 +1931,18 @@ def version_update():
         raise HTTPException(409, str(e))
     st = versions.status()
     if st['restart_needed']:
-        versions.restart_when_idle(manager, 'update to %s' % st['disk'])
+        r = versions.restart_when_idle(manager, 'update to %s' % st['disk'])
+        if r.get('refused'):
+            raise HTTPException(409, 'Updated, but not restarted: %s' % r['refused'])
     return dict(versions.status(), message=text)
 
 
 @app.post('/api/version/restart')
 def version_restart():
     """Reinicia a app (a versão do disco) quando nenhuma tarefa estiver a correr."""
-    versions.restart_when_idle(manager, 'restart')
+    r = versions.restart_when_idle(manager, 'restart')
+    if r.get('refused'):
+        raise HTTPException(409, 'Not restarted: %s' % r['refused'])
     return versions.status()
 
 

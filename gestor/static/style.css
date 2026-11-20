@@ -55,6 +55,9 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .card:hover { border-color: var(--accent); }
 .card .art { aspect-ratio: 2/3; background: #0b0d0f center/cover no-repeat; display: flex; align-items: flex-end; }
 .card .art .ph { padding: 10px; font-weight: 600; font-size: 15px; color: #c8d0d8; }
+.card .art { position: relative; }
+.card .playbtn { position: absolute; right: 8px; bottom: 8px; opacity: 0; transition: opacity .15s; box-shadow: 0 4px 14px #000a; }
+.card:hover .playbtn, .card .playbtn:focus { opacity: 1; }
 .card .meta { padding: 8px 9px; display: flex; flex-direction: column; gap: 5px; }
 .card .t { font-weight: 600; font-size: 13.5px; line-height: 1.25; }
 .card .badges { display: flex; gap: 4px; flex-wrap: wrap; }

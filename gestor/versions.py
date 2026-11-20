@@ -131,11 +131,31 @@ def update():
     return 'updated to %s' % (on_disk().get('version') or '?')
 
 
+def compile_errors():
+    """O primeiro erro de sintaxe nos ficheiros .py da app no disco ('ficheiro:linha: erro'), ou None."""
+    import ast
+    import glob
+    for f in sorted(glob.glob(os.path.join(config.ROOT, 'gestor', '**', '*.py'), recursive=True)):
+        try:
+            with open(f, encoding='utf-8') as fh:
+                ast.parse(fh.read(), f)
+        except SyntaxError as e:
+            return '%s:%s: %s' % (os.path.relpath(f, config.ROOT), e.lineno, e.msg)
+        except (OSError, ValueError) as e:
+            return '%s: %s' % (os.path.relpath(f, config.ROOT), e)
+    return None
+
+
 def restart_when_idle(manager, reason='update'):
     """Reinicia a app quando nenhuma tarefa estiver a correr ou em fila (as tarefas não se perdem a
     meio). Um processo à parte espera que esta saia e volta a abrir o iniciar.bat."""
     if _restart['pending']:
         return dict(_restart)
+    broken = compile_errors()
+    if broken:
+        # Reiniciar com código que não compila deixava a app em baixo (o iniciar.bat abria e fechava):
+        # fica a versão que está a correr, e diz-se onde está o erro.
+        return dict(_restart, pending=False, refused='the code on disk does not compile: %s' % broken)
     _restart.update(pending=True, reason=reason, at=jobs.now())
 
     def wait_and_go():
