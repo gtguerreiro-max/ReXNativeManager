@@ -1443,9 +1443,21 @@ function renderOrders() {
       <div class="body"><div class="t">${label}${esc(otitle(o))}</div>${st.length ? `<div class="steps">${steps}</div>` : ''}
         <div class="live">${orderLive(o)}</div></div></button>`;
   }).join('');
-  v.innerHTML = `<div class="vhead"><div><h2>Requests</h2><div class="sub">From download to library: the PC does the work, you can keep using the Deck</div></div></div>
+  const done = (h.orders || []).some(o => !['running', 'queued'].includes(o.status));
+  v.innerHTML = `<div class="vhead"><div><h2>Requests</h2><div class="sub">From download to library: the PC does the work, you can keep using the Deck</div></div>
+    ${done ? '<button class="btn f" data-hint="Clear" onclick="clearRequests()">Clear finished</button>' : ''}</div>
     ${pendingBanner(h)}
     ${rows ? `<div class="orders">${rows}</div>` : '<div class="empty"><b>No requests</b>Choose a game in the Catalogue and press Install.</div>'}`;
+}
+// Tira da lista os pedidos acabados (os que correm ou estão em fila ficam).
+async function clearRequests() {
+  try {
+    const r = await api('/api/remote/requests/clear', { body: { which: 'finished' } });
+    toast(r.cleared ? `${r.cleared} finished request(s) cleared` : 'Nothing to clear');
+    await refreshHome();
+    S.sig.orders = null;
+    if (S.tab === 'orders') render('orders');
+  } catch (e) { toast(e.message, true); }
 }
 // A parte de um pedido que muda enquanto corre: os passos do PC, a linha de estado e a barra.
 function orderLive(o) {

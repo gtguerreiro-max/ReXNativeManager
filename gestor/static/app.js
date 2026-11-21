@@ -937,6 +937,15 @@ async function loadJobs(quiet) {
     if (html !== lastJobsHtml) { $('#joblist').innerHTML = html; lastJobsHtml = html; }
   } catch (e) { if (!quiet) fail(e); }
 }
+async function clearJobs(which) {
+  if (which === 'finished' && !await confirmBox('<h3 style="margin-top:0">Clear finished jobs?</h3><p>Every finished job leaves the list, the ones that worked too (their logs stay in the logs folder). Queued and running jobs stay.</p>', 'Clear')) return;
+  try {
+    const r = await api('/api/jobs/clear', { body: { which } });
+    toast(r.cleared ? `${r.cleared} job(s) cleared` : 'Nothing to clear');
+    lastJobsHtml = null;
+    loadJobs();
+  } catch (e) { fail(e); }
+}
 async function testGamesDialog() {
   let gs = [];
   try { gs = (await api('/api/games')).games.filter(g => g.built); } catch (e) { return fail(e); }

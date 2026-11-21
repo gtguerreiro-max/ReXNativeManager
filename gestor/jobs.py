@@ -288,6 +288,18 @@ class Manager:
             out.update(job=r.id, title=r.title, kind=r.kind, game=r.game, for_s=secs)
         return out
 
+    def forget(self, statuses):
+        """Tira da lista as tarefas acabadas com estes estados (nunca uma em fila ou a correr); os
+        registos delas ficam em logs/. Devolve quantas."""
+        statuses = set(statuses) - {'queued', 'running'}
+        with self.lock:
+            gone = [i for i, j in self.jobs.items() if j.status in statuses]
+            for i in gone:
+                del self.jobs[i]
+        if gone:
+            self.save()
+        return len(gone)
+
     def active(self, kind=None, game=None):
         return [j for j in self.list(limit=1000) if j.status in ('queued', 'running') and
                 (kind is None or j.kind == kind) and (game is None or j.game == game)]

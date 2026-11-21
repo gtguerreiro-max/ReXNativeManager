@@ -127,7 +127,10 @@
   <!-- Tarefas -->
   <section class="tab" id="tab-jobs">
     <div class="row" style="margin-bottom:10px"><button class="b" onclick="testGamesDialog()">Test games…</button>
-      <span class="small muted">builds, tests and compares the chosen games one at a time, and tells you if any got worse</span></div>
+      <span class="small muted">builds, tests and compares the chosen games one at a time, and tells you if any got worse</span>
+      <span class="grow"></span>
+      <button class="b s" onclick="clearJobs('failed')" title="Failed, cancelled and interrupted jobs leave the list (their logs stay)">Clear failed</button>
+      <button class="b s" onclick="clearJobs('finished')" title="Every finished job leaves the list; queued and running ones stay">Clear finished</button></div>
     <div id="joblist"></div>
   </section>
 

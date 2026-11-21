@@ -8,10 +8,15 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.17.2'
+VERSION = '1.17.3'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.17.3', '2026-11-21', [
+        'Clear the job list: in Jobs, Clear failed (failed, cancelled and interrupted jobs) and Clear finished '
+        '(every finished job); in Deck mode, Clear finished in Requests. Queued and running jobs stay, and the '
+        'logs of the cleared ones stay in the logs folder.',
+    ]),
     ('1.17.2', '2026-11-21', [
         'Downloads that got slow after the network went down recover: the download measures its speed and, '
         'when it falls far below what it had (or under 0.6 MB/s), opens a new connection from where it is, '

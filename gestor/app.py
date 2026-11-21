@@ -1042,6 +1042,22 @@ def list_jobs(game: str = None):
     return {'jobs': [j.to_dict(with_events=False) for j in manager.list(game=game, limit=150)]}
 
 
+CLEAR = {'failed': ('failed', 'cancelled', 'interrupted'),
+         'finished': ('failed', 'cancelled', 'interrupted', 'ok')}
+
+
+@app.post('/api/jobs/clear')
+def jobs_clear(body: dict = Body(default={})):
+    """Limpa a lista: as que falharam (falhadas, canceladas, interrompidas) ou todas as acabadas."""
+    which = body.get('which') if body.get('which') in CLEAR else 'failed'
+    return {'cleared': manager.forget(CLEAR[which]), 'which': which}
+
+
+@app.post('/api/remote/requests/clear')
+def remote_requests_clear(body: dict = Body(default={})):
+    return jobs_clear(body)
+
+
 @app.get('/api/jobs/{job_id}')
 def get_job(job_id: str):
     j = manager.get(job_id)
