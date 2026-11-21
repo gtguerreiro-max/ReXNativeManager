@@ -406,8 +406,9 @@ function subtabs(names, on, fn) {
 function gameSub(k) { curSub = k; renderGame(); }
 function renderGame() {
   const g = cur;
-  let h = subtabs([['resumo', 'Summary'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
+  let h = subtabs([['resumo', 'Summary'], ['cenas', 'Test scenes'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
   if (curSub === 'resumo') h += gameSummary(g);
+  if (curSub === 'cenas') h += '<div id="scenebox" class="muted">Loading...</div>';
   if (curSub === 'defs') h += gameSettings(g);
   if (curSub === 'capas') h += '<div id="coverbox" class="muted">Loading...</div>';
   if (curSub === 'tarefas') h += gameJobs(g);
@@ -415,6 +416,71 @@ function renderGame() {
   if (curSub === 'capas') loadCovers();
   if (curSub === 'defs') fillQuickForms();
   if (curSub === 'resumo') loadReports();
+  if (curSub === 'cenas') loadScenes();
+}
+
+// -- cenas de teste: frames do jogo gravados (traces do ReXNative), desenhados outra vez depois de cada
+// mudança e comparados pixel a pixel com a referência (os mesmos frames: só o renderizador muda) --
+const SCENE_SOURCE = { boot: 'Where the boot test ends', play: 'Recorded while playing', report: 'From a report', test: 'Test' };
+const SCENE_CLS = { same: 'ok', igual: 'ok', melhor: 'ok', pior: 'bad', inconclusivo: 'warn', stale: 'warn', failed: 'bad' };
+let sceneTimer = null;
+async function loadScenes() {
+  clearTimeout(sceneTimer);
+  const slug = cur && cur.slug;
+  if (!slug) return;
+  let r;
+  try { r = await api(`/api/games/${encodeURIComponent(slug)}/scenes`); } catch (e) { return fail(e); }
+  const box = $('#scenebox');
+  if (!box || !cur || cur.slug !== slug || curSub !== 'cenas') return;
+  const s = encodeURIComponent(slug);
+  const img = (m, which) => `/api/scenes/${s}/${encodeURIComponent(m.id)}/img/${which}?t=${encodeURIComponent((m.last && m.last.at) || m.ref_at || m.at)}`;
+  const card = m => {
+    const L = m.last || {};
+    const state = !m.has_ref ? '<span class="chip warn">pictures when the game closes</span>'
+      : L.verdict ? `<span class="chip ${SCENE_CLS[L.verdict] || ''}">${esc(m.word || L.verdict)}</span>` : '<span class="chip">not checked yet</span>';
+    return `<div class="scene">
+      ${m.has_ref ? `<img src="${img(m, 'ref')}" alt="" onclick="window.open('${img(m, 'ref')}')">` : '<div class="ph">no pictures yet</div>'}
+      <div class="sb"><b>${esc(m.label)}</b>
+        <div class="small muted">${esc(SCENE_SOURCE[m.source] || m.source)} · ${esc((m.at || '').slice(0, 16).replace('T', ' '))} · reference: ReXNative ${esc(m.ref_rex || '-')}</div>
+        <div style="margin-top:6px">${state} ${L.at ? `<span class="small muted">${esc(L.at.slice(0, 16).replace('T', ' '))} with ${esc(L.rex || '?')}</span>` : ''}</div>
+        ${L.summary && L.verdict !== 'same' ? `<div class="small" style="margin-top:4px">${esc(L.summary)}</div>` : ''}
+        <div class="row" style="margin-top:8px;gap:6px">
+          ${m.has_sheet ? `<button class="b s" onclick="window.open('${img(m, 'sheet')}')">Before / after</button>` : ''}
+          ${m.has_new && L.verdict && !['same', 'melhor'].includes(L.verdict) && !L.accepted ? `<button class="b s" onclick="sceneDo('${esc(m.id)}','accept')" title="The new pictures become the reference">Accept the new look</button>` : ''}
+          ${m.has_prev && L.accepted ? `<button class="b s" onclick="sceneDo('${esc(m.id)}','undo')" title="Back to the reference before it">Undo the accept</button>` : ''}
+          <button class="b s d" onclick="sceneDo('${esc(m.id)}','delete')">Delete</button></div></div></div>`;
+  };
+  const c = r.check;
+  box.className = '';
+  box.innerHTML = `<p class="small muted" style="margin-top:0">A scene is a few frames of the game recorded as it runs. After every ReXNative change the Manager draws each scene again with the new build and compares the pixels with its reference: the same frames, so a difference is the renderer's, never a slower start. Record the places that matter while you play.</p>
+    <div class="row" style="gap:8px;align-items:center">
+      <button class="b p" ${r.running ? '' : 'disabled'} onclick="sceneRecord()" title="${r.running ? 'Records the next frames of the game' : 'Start the game with Play on this PC first'}">● Save this scene as a test</button>
+      ${r.running ? '<span class="small">The game is open: go where you want to keep, then press it (Alt+Tab to come here).</span>'
+        : `<button class="b s" onclick="playSlug('${esc(slug)}','pc');setTimeout(loadScenes,4000)">▶ Play on this PC</button><span class="small muted">to record a scene</span>`}
+      <span class="grow"></span>
+      ${r.scenes.length ? `<button class="b s" ${r.running || r.busy ? 'disabled' : ''} onclick="scenesCheck()">Check them now</button>` : ''}</div>
+    ${c ? `<div class="small muted" style="margin-top:8px">Last check ${esc((c.at || '').slice(0, 16).replace('T', ' '))} with ReXNative ${esc(c.rex || '?')}: ${c.checked} checked${c.worse && c.worse.length ? `, <b style="color:var(--bad)">${c.worse.length} worse</b>` : ''}${c.changed && c.changed.length ? `, ${c.changed.length} changed` : ''}${c.better && c.better.length ? `, ${c.better.length} better` : ''}${c.job ? ` · <a href="#" onclick="openJob('${esc(c.job)}','${esc(slug)}');return false">job</a>` : ''}</div>` : ''}
+    <div class="scenes">${r.scenes.map(card).join('') || '<div class="muted">No scenes yet. The next boot test records one of where it ends; record your own while playing.</div>'}</div>`;
+  if (r.running || r.busy) sceneTimer = setTimeout(loadScenes, 5000);
+}
+async function sceneRecord() {
+  const label = prompt('A name for this scene (what it shows):', '');
+  if (label === null) return;
+  toast('Recording the next frames of the game...');
+  try { await api(`/api/games/${encodeURIComponent(cur.slug)}/scenes/record`, { body: { label } }); toast('Scene saved: its pictures are made when you close the game'); }
+  catch (e) { fail(e); }
+  loadScenes();
+}
+async function scenesCheck() {
+  try { const j = await api(`/api/games/${encodeURIComponent(cur.slug)}/scenes/check`, { body: {} }); toast('Checking the scenes (follow it in Jobs)'); }
+  catch (e) { fail(e); }
+  loadScenes();
+}
+async function sceneDo(id, what) {
+  if (what === 'delete' && !confirm('Delete this test scene? It is not checked any more after ReXNative changes.')) return;
+  try { await api(`/api/scenes/${encodeURIComponent(cur.slug)}/${encodeURIComponent(id)}/${what}`, { body: {} }); }
+  catch (e) { fail(e); }
+  loadScenes();
 }
 
 function gameSummary(g) {

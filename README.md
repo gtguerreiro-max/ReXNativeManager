@@ -498,15 +498,28 @@ counts only those commits (not those from other sessions in the same interval).
 
 Testing every game on each change takes an hour. Claude ends each fix with a `SUSPECTS:` line:
 the other games that go through the code that changed, seen in their logs and layers. The app
-then queues a job that builds, tests and compares only those, and says whether any got worse (the
-boot failed, or the image got worse). In Jobs, "Test games…" does the same for the games you
-choose.
+then queues a job that builds and tests only those, and says whether any got worse: the boot
+failed, or one of its **test scenes** got worse. In Jobs, "Test games…" does the same for the games
+you choose.
 
-Each game is compared with itself: the native captures from before the change (`baseline-*.png`)
-against the ones after, the same renderer with the same button presses at the same seconds. With
-a difference below 2.5% it is "same" without spending the model; above that the cheap model says
-whether it improved, got worse or shows different moments. Only games without before-captures go
-to the comparison with the classic renderer.
+### Test scenes
+
+A scene is a few frames of a game recorded as a ReXNative frame trace (what the game hands the
+renderer and the guest memory it reads), with the pictures the build that recorded it drew (its
+reference). After a ReXNative change the new build draws each scene again and the pictures are
+compared pixel by pixel: the same frames, so a difference is the renderer's, never a slower start
+or a fade caught at another moment (comparing captures taken at 15/30/45/60 s of two runs called
+games "worse" for a black frame between an intro and the title). Equal pixels are "same" without
+the model; a change gets a before/after picture with the changed region enlarged, and the cheap
+model says whether it is better or worse. A better look becomes the reference (it can be undone);
+any other change waits for **Accept the new look**.
+
+Scenes come from the game itself: the boot test records one of where it ends, once per game;
+**Save this scene as a test** (the game's Test scenes tab) records the next frames while you play it
+with Play on this PC (the pictures are made when you close it); and Claude records the place of
+each report (with the player's save) before fixing it, so that place is checked after every later
+change. They live in `data_dir/scenes/<game>/`, a few MB each; a trace from a build whose command
+structures changed is marked "needs recording again".
 
 ### Folders
 

@@ -271,6 +271,13 @@ and docs/GAMES.md for similar problems already solved in other games):
   If ReXGlue's renderer draws the game right, also set `[rexnative]` `classic = true` in
   {run}\\{name}.toml and in {work}\\deck.toml as a workaround until then (the game then starts on the
   Classic renderer, with the settings HUD) and say so.
+- A test scene of the place: once the game shows the place of the report (with the player's save,
+  when there is one), and before you change anything, record it with
+  `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1 record 3` (it prints the trace's path, a
+  .rxt in {run}\\live\\trace). The app keeps it as a test scene of this game: after your fix it draws
+  its reference pictures with the fixed build, and after every later ReXNative change it draws the
+  same frames again and compares the pixels, so the place stays right. Add one line
+  `SCENE: <that path>` per scene (at most 2) after SUSPECTS. Skip it when the place cannot be reached.
 
 End with a SHORT summary in English for the user: the cause, what you changed
 (files, commits), and where in the game to check that it is right.
@@ -282,6 +289,14 @@ SUSPECTS: <only if you committed ReXNative changes: up to 6 folder names of OTHE
 judged from their logs (run\\logs\\*.log, run\\logs\\live\\*.log) and layers, space-separated; or "none">
 
 {rules}"""
+
+
+SCENE_LINE = re.compile(r'^\s*SCENE:\s*(.+?)\s*$', re.M)
+
+
+def parse_scenes(summary):
+    """Os traces que o Claude gravou como cenas de teste ("SCENE: <caminho do .rxt>")."""
+    return [m.group(1) for m in SCENE_LINE.finditer(summary or '')]
 
 
 def investigate(job, work, report):

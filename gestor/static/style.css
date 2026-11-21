@@ -50,6 +50,13 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .muted { color: var(--muted); } .small { font-size: 12.5px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
+/* cenas de teste */
+.scenes { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 12px; margin-top: 12px; }
+.scene { background: var(--panel2); border-radius: 10px; overflow: hidden; display: flex; flex-direction: column; }
+.scene img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; cursor: zoom-in; display: block; background: #000; }
+.scene .ph { aspect-ratio: 16 / 9; display: flex; align-items: center; justify-content: center; color: var(--muted); background: #0006; }
+.scene .sb { padding: 10px 12px 12px; }
+button.b:disabled { opacity: .45; cursor: default; }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
   cursor: pointer; display: flex; flex-direction: column; }
 .card:hover { border-color: var(--accent); }

@@ -8,10 +8,22 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.12.0'
+VERSION = '1.13.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.13.0', '2026-11-21', [
+        'Test scenes, so "got worse" means it: a scene is a few frames of a game recorded as a ReXNative '
+        'frame trace, with the pictures its build drew. After a ReXNative change the new build draws '
+        'each scene again and the pixels are compared: the same frames, so a slower start or a fade can '
+        'no longer look like a fault. A change gets a before/after picture (the region enlarged) and the '
+        'model says better or worse; a better look becomes the reference (Undo), others wait for Accept.',
+        'Scenes from the game itself: Save this scene as a test while you play on the PC (the game page, '
+        'Test scenes), the place of each report (Claude records it), and where the boot test ends.',
+        'Testing the suspects of a fix: built, booted and their scenes checked. The comparison of captures '
+        'at 15/30/45/60 s of two runs no longer decides (it called The Bureau and Brothers worse for a '
+        'black frame between an intro and the title).',
+    ]),
     ('1.12.0', '2026-11-21', [
         'Talk to the assistant: open a request (Deck mode, Requests) or a job (PC) to follow what Claude, '
         'or the assistant chosen in Settings, says and does, live; while Claude works you can write to '

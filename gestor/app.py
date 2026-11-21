@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import (agents, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
                games, github, info, jobs, lan, linuxbuild, orders, owngames, pipeline, rexlog, rexrepo, saves,
-               sdk, state, tunings, versions, xna)
+               scenes, sdk, state, tunings, versions, xna)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title='ReXNative Manager')
@@ -593,10 +593,126 @@ def game_play(slug: str, body: dict = Body(default={})):
     if _exe_running(exe):
         return {'ok': True, 'already': True, 'title': g['title'], 'pads': pads}
     keys = _keyboard_flag(os.path.splitext(exe)[0] + '.toml')
-    # Um processo à parte, no seu grupo: fica aberto se a app fechar.
-    subprocess.Popen([exe] + keys, cwd=os.path.dirname(exe), creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    # Um processo à parte, no seu grupo: fica aberto se a app fechar. Com o ficheiro de controlo e a
+    # pasta dos traces, para gravar cenas de teste enquanto se joga (Save this scene).
+    p = subprocess.Popen([exe] + keys + scenes.live_flags(os.path.dirname(exe)), cwd=os.path.dirname(exe),
+                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    threading.Thread(target=_after_play, args=(p, w, slug, g['title']), daemon=True).start()
     return {'ok': True, 'already': False, 'title': g['title'], 'pads': pads, 'keyboard': bool(keys)}
+
+
+def _after_play(p, w, slug, title):
+    """Quando o jogo fecha, as cenas gravadas a jogar ganham as imagens de referência (desenhadas pela
+    compilação com que foram gravadas: a de agora)."""
+    p.wait()
+    if scenes.pending_refs(slug):
+        manager.submit('scenes', 'Scene pictures: %s' % title, lambda job: _scene_refs_job(job, w, slug),
+                       lane='build', game=slug)
+
+
+def _scene_refs_job(job, w, slug):
+    made = 0
+    for m in scenes.pending_refs(slug):
+        job.event('step', 'Reference pictures of "%s" (a window opens for a few seconds)' % m['label'])
+        try:
+            scenes.make_refs(job, w, slug, m['id'])
+            made += 1
+            job.event('ok', '"%s": ready; it is checked after every ReXNative change' % m['label'])
+        except scenes.SceneError as e:
+            job.event('fail', '"%s": %s' % (m['label'], e))
+    return {'made': made}
+
+
+def _scene_or_404(slug, sid):
+    m = scenes.load(slug, sid)
+    if not m:
+        raise HTTPException(404, 'unknown scene')
+    return m
+
+
+@app.get('/api/games/{slug}/scenes')
+def game_scenes(slug: str):
+    w = _work(slug)
+    name = games.exe_name(w)
+    running = bool(name) and _exe_running(os.path.join(w, 'run', name + '.exe'))
+    busy = any(j.kind in ('scenes', 'pipeline') for j in manager.active(game=slug))
+    return {'running': running, 'busy': busy, 'rex': scenes.build_rex(w),
+            'scenes': [scenes.view(m) for m in scenes.scenes(slug)][::-1],
+            'check': state.get('games', state.game_key(w), {}).get('scenes_check')}
+
+
+@app.post('/api/games/{slug}/scenes/record')
+def game_scene_record(slug: str, body: dict = Body(default={})):
+    """Grava os próximos frames do jogo que está a correr (aberto com Play on this PC) como cena."""
+    w = _work(slug)
+    name = games.exe_name(w)
+    if not name or not _exe_running(os.path.join(w, 'run', name + '.exe')):
+        raise HTTPException(409, 'start the game with Play on this PC first, then go where you want to keep')
+    try:
+        trace = scenes.record_live(os.path.join(w, 'run'))
+    except scenes.SceneError as e:
+        raise HTTPException(409, '%s (a game opened before this version of the Manager cannot record: '
+                                 'close it and press Play again)' % e)
+    label = (body.get('label') or '').strip() or 'Your scene, %s' % jobs.now()[:16].replace('T', ' ')
+    return scenes.view(scenes.add(w, slug, trace, 'play', label))
+
+
+@app.post('/api/games/{slug}/scenes/check')
+def game_scenes_check(slug: str):
+    w = _work(slug)
+    name = games.exe_name(w)
+    if name and _exe_running(os.path.join(w, 'run', name + '.exe')):
+        raise HTTPException(409, 'close the game first: the scenes are drawn by its executable')
+    for j in manager.active(game=slug):
+        if j.kind in ('scenes', 'pipeline'):
+            return _job(j)
+    title = games.info(w)['title']
+
+    def fn(job):
+        r = scenes.check_all(job, w, slug)
+        out = {'at': jobs.now(), 'rex': scenes.build_rex(w), 'checked': r['checked'], 'worse': r['worse'],
+               'better': r['better'], 'changed': r['changed'], 'job': job.id}
+        state.update('games', state.game_key(w), {'scenes_check': out})
+        return out
+    return _job(manager.submit('scenes', 'Check the test scenes: %s' % title, fn, lane='build', game=slug))
+
+
+@app.post('/api/scenes/{slug}/{sid}/{what}')
+def scene_action(slug: str, sid: str, what: str, body: dict = Body(default={})):
+    _scene_or_404(slug, sid)
+    try:
+        if what == 'accept':
+            return scenes.view(scenes.accept(slug, sid))
+        if what == 'undo':
+            return scenes.view(scenes.undo_accept(slug, sid))
+        if what == 'label':
+            m = scenes.load(slug, sid)
+            m['label'] = (body.get('label') or m['label']).strip()[:200]
+            scenes.save(m)
+            return scenes.view(m)
+        if what == 'delete':
+            scenes.delete(slug, sid)
+            return {'ok': True}
+    except RuntimeError as e:
+        raise HTTPException(409, str(e))
+    raise HTTPException(404)
+
+
+@app.get('/api/scenes/{slug}/{sid}/img/{which}')
+def scene_image(slug: str, sid: str, which: str):
+    m = _scene_or_404(slug, sid)
+    d = scenes.scene_dir(slug, sid)
+    if which == 'sheet':
+        p = (m.get('last') or {}).get('sheet')
+    elif which in ('ref', 'new', 'ref-prev'):
+        imgs = scenes._pngs(os.path.join(d, which))
+        p = imgs[len(imgs) // 2] if imgs else None
+    else:
+        p = None
+    if not p or not os.path.exists(p) or not os.path.normcase(os.path.abspath(p)).startswith(os.path.normcase(d)):
+        raise HTTPException(404)
+    return FileResponse(p, headers={'Cache-Control': 'no-cache'})
 
 
 @app.post('/api/games/{slug}/pipeline')

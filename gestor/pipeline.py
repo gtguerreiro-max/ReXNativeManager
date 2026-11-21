@@ -27,7 +27,7 @@ CRASH = re.compile(r'crash report, rexglue|==== end of crash report|\bFATAL\b|ac
 NATIVE_FAULT = re.compile(r'ReXNative: the native path read a bad guest address in (\S+)')
 STEP_TITLE = {'prepare': 'Prepare', 'build': 'Build', 'boot': 'Boot test on the PC',
               'compare': 'Compare native and classic', 'deckpc': 'Test with the Deck settings',
-              'selftest': 'Self-test'}
+              'selftest': 'Self-test', 'scenes': 'Test scenes'}
 
 
 def _rex(cfg):
@@ -355,7 +355,22 @@ def step_boot(job, ctx, attempt):
     pair = bool(cfg.get('compare_enabled', True) and cfg.get('compare_one_run', True) and
                 'compare' in (ctx.get('steps') or []) and not _stock(work, name) and
                 not (games.info(work).get('classic') or {}).get('pc'))
-    res = timed_run(job, ctx['slug'], run, name, 'native', boot=True, pair_classic=pair)
+    from . import scenes
+    want_scene = not _stock(work, name) and not (games.info(work).get('classic') or {}).get('pc') and \
+        not any(m.get('source') == 'boot' and not m.get('stale') for m in scenes.scenes(ctx['slug']))
+    res = timed_run(job, ctx['slug'], run, name, 'native', boot=True, pair_classic=pair, record=want_scene)
+    if res.get('scene_trace'):
+        try:
+            if res.get('running') and not res.get('crash') and not res.get('native_fault'):
+                scenes.add(work, ctx['slug'], res['scene_trace'], 'boot',
+                           'Where the boot test ends (%d s)' % (res.get('seconds') or 0))
+                job.event('info', 'A test scene of where the boot test ends was recorded (its reference '
+                                  'pictures come in the Test scenes step)')
+            else:
+                os.remove(res['scene_trace'])
+        except OSError as e:
+            job.log('boot scene not kept: %s' % e)
+        res.pop('scene_trace', None)
     # As capturas do nativo mudaram: a comparação que havia é de antes (fica marcada).
     cmp = state.get('games', state.game_key(work), {}).get('compare')
     if cmp and not cmp.get('stale'):
@@ -423,6 +438,31 @@ def step_boot(job, ctx, attempt):
     return False, _fail('boot', 'The boot test failed: %s' % why, command='live.ps1 start',
                         cwd=run, rc=0, log_path=gl or '', tail=jobs.tail(gl, 200) if gl else '(no log)',
                         details=details)
+
+
+def step_scenes(job, ctx, attempt):
+    """As cenas de teste do jogo desenhadas por esta compilação contra as suas referências (os
+    mesmos frames: só o renderizador muda). Nunca falha o pipeline: o resultado fica no estado do
+    jogo (scenes_check) e o lote de suspeitos decide com ele."""
+    from . import scenes
+    work, slug = ctx['work'], ctx['slug']
+    if not scenes.scenes(slug):
+        return True, {'summary': 'none yet (record one while playing: Play on this PC, then Save this scene)'}
+    name = games.exe_name(work)
+    if _stock(work, name) or (games.info(work).get('classic') or {}).get('pc'):
+        return True, {'summary': 'skipped: the game runs on the classic renderer'}
+    r = scenes.check_all(job, work, slug)
+    out = {'at': jobs.now(), 'rex': scenes.build_rex(work), 'checked': r['checked'], 'worse': r['worse'],
+           'better': r['better'], 'changed': r['changed'], 'job': job.id}
+    state.update('games', state.game_key(work), {'scenes_check': out})
+    ctx['scenes'] = out
+    if not r['checked']:
+        return True, {'summary': 'reference pictures made; nothing to compare yet'}
+    same = r['checked'] - len(r['worse']) - len(r['better']) - len(r['changed'])
+    return True, {'summary': '%d checked: %d same%s%s%s' % (
+        r['checked'], same, ', %d better' % len(r['better']) if r['better'] else '',
+        ', %d changed (look at them)' % len(r['changed']) if r['changed'] else '',
+        ', %d WORSE' % len(r['worse']) if r['worse'] else '')}
 
 
 def step_selftest(job, ctx, attempt):
@@ -497,7 +537,7 @@ def _control(run, line):
         f.write(line + '\n')
 
 
-def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False):
+def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False, record=False):
     """Arranca o jogo com live.ps1 (mode 'native' ou 'classic', o renderizador do ReXGlue) e
     tira capturas do próprio renderizador aos compare_times segundos (as mesmas nas duas
     execuções, para as comparar). boot: também vê se arranca (frames, crash) e pode esperar até
@@ -577,6 +617,13 @@ def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fal
                     job.log('capture at %d s failed: no picture from the renderer in 10 s' % t)
             if el >= end and not pending:
                 if not boot or res['frames'] >= cfg['boot_min_frames']:
+                    if record:
+                        # A cena de teste do arranque: os frames a que o teste chega, uma vez por jogo.
+                        from . import scenes
+                        try:
+                            res['scene_trace'] = scenes.record_live(run)
+                        except (scenes.SceneError, OSError) as e:
+                            job.log('no boot scene: %s' % e)
                     break
             if el >= (cfg['boot_seconds_max'] if boot else end + 30):
                 break
@@ -974,7 +1021,7 @@ def suspicious(png):
 
 
 STEPS = {'prepare': step_prepare, 'build': step_build, 'boot': step_boot, 'compare': step_compare,
-         'deckpc': step_deckpc}
+         'deckpc': step_deckpc, 'scenes': step_scenes}
 TEST_STEPS = {'selftest': step_selftest}
 
 
@@ -995,7 +1042,7 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
     clássico quando o nativo não passa (não nos testes de suspeitos nem nos relatórios, onde
     esconderia o que a mudança estragou)."""
     cfg = config.load()
-    tests = ['boot'] + (['compare'] if cfg.get('compare_enabled', True) else []) + (
+    tests = ['boot', 'scenes'] + (['compare'] if cfg.get('compare_enabled', True) else []) + (
         ['deckpc'] if cfg.get('deck_test_enabled', True) else [])
     if source:
         slug = catalog.slug(source)
@@ -1031,6 +1078,11 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
             step = steps[i]
             ctx['steps'] = steps
             job.check()
+            if step == 'scenes' and (ctx.get('native_handover') or ctx.get('classic_fallback')):
+                job.event('info', 'Test scenes skipped: the game runs on the classic renderer', step=step)
+                done.append(step)
+                i += 1
+                continue
             if step == 'compare' and (ctx.get('native_handover') or ctx.get('classic_fallback') or
                                       (games.info(work).get('classic') or {}).get('pc')):
                 # O jogo arranca no clássico: as duas execuções seriam do clássico.
@@ -1151,13 +1203,14 @@ def report_job(job, work, report_id):
     state.update('reports', report_id, {'summary': fx['summary'], 'commits': fx['commits'],
                                         'edited': fx['edited'], 'pushed': fx['pushed'],
                                         'rex_note': fx.get('rex_note')})
+    kept = keep_report_scenes(job, work, rep, report_id, fx.get('summary') or '')
     if not fx['ok']:
         state.update('reports', report_id, {'status': 'failed'})
         raise RuntimeError(fx['summary'])
     if fx['commits'] or fx['edited']:
         try:
-            run(job, work=work, steps=['build', 'boot', 'compare'] if config.load().get('compare_enabled', True)
-                else ['build', 'boot'], auto_report=False, fallback=False)
+            run(job, work=work, steps=['build', 'boot', 'scenes', 'compare'] if config.load().get('compare_enabled', True)
+                else ['build', 'boot', 'scenes'], auto_report=False, fallback=False)
         except jobs.Cancelled:
             state.update('reports', report_id, {'status': 'cancelled'})
             raise
@@ -1166,6 +1219,14 @@ def report_job(job, work, report_id):
             contrib_event(job, job.result.get('claude') or [])
             queue_suspects(job, job.result.get('claude') or [], rep.get('slug'))
             raise
+    elif kept:
+        # Sem compilação nova: as imagens de referência da cena são as desta compilação.
+        from . import scenes
+        for sid in kept:
+            try:
+                scenes.make_refs(job, work, rep.get('slug') or os.path.basename(work), sid)
+            except scenes.SceneError as e:
+                job.event('info', 'Scene of the report: %s' % e)
     status = 'no fix' if fx['gave_up'] else ('fixed: check it in the game' if (
         fx['commits'] or fx['edited']) else 'investigated')
     state.update('reports', report_id, {'status': status})
@@ -1174,6 +1235,29 @@ def report_job(job, work, report_id):
     share_contribution(job, job.result.get('claude') or [], work, rep.get('slug') or os.path.basename(work))
     queue_suspects(job, job.result.get('claude') or [], rep.get('slug'))
     return {'report': report_id}
+
+
+def keep_report_scenes(job, work, rep, report_id, summary):
+    """As cenas que o Claude gravou no sítio do relatório (linhas "SCENE: <trace.rxt>" no fim da
+    resposta) passam a cenas de teste do jogo: depois de cada mudança no ReXNative, esse sítio é
+    desenhado outra vez e comparado. Devolve os ids."""
+    from . import scenes
+    slug = rep.get('slug') or os.path.basename(work)
+    run_dir = os.path.normcase(os.path.abspath(os.path.join(work, 'run')))
+    kept = []
+    for path in claude.parse_scenes(summary):
+        p = os.path.abspath(path.strip().strip('`"'))
+        if not p.lower().endswith('.rxt') or not os.path.isfile(p) or \
+                not os.path.normcase(p).startswith(run_dir):
+            job.event('info', 'Scene of the report not kept (not a trace of this game): %s' % path[:200])
+            continue
+        label = 'Report: %s' % (rep.get('text') or '').split(';')[0][:80]
+        meta = scenes.add(work, slug, p, 'report', label, report=report_id)
+        kept.append(meta['id'])
+        job.event('ok', 'Kept the scene of the report as a test scene: %s' % label)
+    if kept:
+        state.update('reports', report_id, {'scenes': kept})
+    return kept
 
 
 def queue_suspects(job, fixes, own_slug):
@@ -1276,7 +1360,6 @@ def auto_report_faults(job, work, slug, cmp):
 
 
 # -- testar vários jogos (os suspeitos de uma mudança) ----------------------------------------------
-GOOD = ('iguais', 'brilho_diferente', 'cenas_diferentes')
 
 
 def batch_job(job, slugs, reason=''):
@@ -1298,27 +1381,26 @@ def batch_job(job, slugs, reason=''):
             continue
         title = games.info(w)['title']
         key = state.game_key(w)
-        before = (state.get('games', key, {}).get('compare') or {}).get('verdict')
         job.event('step', 'Testing %s (%d of %d)' % (title, len(rows) + 1, len(slugs)), game=slug)
         try:
-            # Com capturas do nativo de antes: o mesmo renderizador antes e depois da mudança (os
-            # mesmos botões aos mesmos segundos); sem elas, a comparação com o clássico.
-            had_base = snapshot_baseline(slug, w)
-            run(job, work=w, steps=['build', 'boot'] if had_base else ['build', 'boot', 'compare'],
-                auto_report=False, fallback=False)
+            # Compila, arranca e desenha as cenas de teste do jogo com a compilação nova: os mesmos
+            # frames que a referência, por isso uma diferença é da mudança. As capturas aos 15/30/45/60
+            # s (intros, transições) já não decidem: um arranque mais lento dava "pior" sem nada pior.
+            state.update('games', key, {'scenes_check': None})
+            run(job, work=w, steps=['build', 'boot', 'scenes'], auto_report=False, fallback=False)
             g = state.get('games', key, {})
             boot_ok = (g.get('boot') or {}).get('ok') and not (g.get('boot') or {}).get('classic_fallback')
-            if had_base:
-                r = regress_compare(job, slug, w) or {}
-                worse = (not boot_ok) or r.get('verdict') == 'piorou'
-                text = '%s; before/after: %s' % ('boots' if boot_ok else 'DOES NOT BOOT',
-                                                 REGRESS_PT.get(r.get('verdict'), r.get('verdict') or '-'))
+            sc = g.get('scenes_check') or {}
+            worse = (not boot_ok) or bool(sc.get('worse'))
+            if not sc.get('checked'):
+                scene_text = 'no test scenes to compare yet'
             else:
-                after = (g.get('compare') or {}).get('verdict')
-                worse = (not boot_ok) or (after == 'nativo_com_erros' and before in GOOD + (None,))
-                text = '%s; comparison with the classic: %s%s' % (
-                    'boots' if boot_ok else 'DOES NOT BOOT', after or '-',
-                    (' (before: %s)' % before) if before and before != after else '')
+                same = sc['checked'] - len(sc.get('worse') or []) - len(sc.get('better') or []) - len(sc.get('changed') or [])
+                scene_text = 'scenes: %d same%s%s%s' % (
+                    same, ', %d better' % len(sc['better']) if sc.get('better') else '',
+                    ', %d changed (look at them)' % len(sc['changed']) if sc.get('changed') else '',
+                    ', WORSE: %s' % ', '.join(sc['worse']) if sc.get('worse') else '')
+            text = '%s; %s' % ('boots' if boot_ok else 'DOES NOT BOOT', scene_text)
             rows.append((slug, title, text, worse))
             job.event('fail' if worse else 'ok', '%s: %s' % (title, text), game=slug)
         except jobs.Cancelled:
@@ -1333,107 +1415,3 @@ def batch_job(job, slugs, reason=''):
     if bad:
         raise RuntimeError('%d game(s) got worse: %s' % (len(bad), ', '.join(r[1] for r in bad)))
     return {'tested': len(rows)}
-
-
-# -- antes / depois (o mesmo renderizador, antes e depois de uma mudança no ReXNative) ---------------
-REGRESS_PT = {'iguais': 'same', 'melhorou': 'BETTER', 'piorou': 'WORSE',
-              'diferentes': 'different moments', 'inconclusivo': 'inconclusive'}
-
-REGRESS_SCHEMA = {
-    'type': 'object',
-    'properties': {
-        'verdict': {'type': 'string', 'enum': ['iguais', 'melhorou', 'piorou', 'diferentes', 'inconclusivo']},
-        'pairs': {'type': 'array', 'items': {'type': 'object', 'properties': {
-            't': {'type': 'integer'},
-            'change': {'type': 'string', 'enum': ['igual', 'melhor', 'pior', 'diferente']},
-            'note': {'type': 'string'}}, 'required': ['t', 'change', 'note']}},
-        'summary': {'type': 'string'},
-    },
-    'required': ['verdict', 'pairs', 'summary'],
-}
-
-REGRESS_PROMPT = """Did a change to ReXNative's native renderer make the Xbox 360 game "{title}" look
-better or worse? Read the image {sheet}: each row is one moment after the game started ({times}
-seconds); on the LEFT the frame before the change (ReXNative {before}), on the RIGHT after it
-({after}). Both are the same native renderer, with the same pad buttons pressed at the same seconds
-({route}), so the rows usually show the same screen; a small offset or a different random intro
-can happen.
-
-For each row: "igual" (the same up to animation, particles or a small time offset), "melhor" (the
-right one shows things the left one missed, or fixes artifacts), "pior" (the right one misses
-things the left one had, or shows artifacts, garbage, a black or white screen), or "diferente" (a
-different screen: judge only unmistakable faults in the right one, and call it "pior" only then).
-Verdict: "iguais", "melhorou", "piorou" (at least one row clearly worse), "diferentes" or
-"inconclusivo". summary: one or two short sentences in English for the user."""
-
-
-def snapshot_baseline(slug, work):
-    """As capturas do nativo que o jogo já tem passam a ser o "antes" (baseline-<seg>.png, com a
-    versão do ReXNative com que foram feitas). False se não houver nenhuma."""
-    d = compare_dir(slug)
-    natives = sorted(f for f in os.listdir(d) if f.startswith('native-') and f.endswith('.png'))
-    if not natives:
-        return False
-    for f in os.listdir(d):
-        if f.startswith('baseline-'):
-            os.remove(os.path.join(d, f))
-    for f in natives:
-        shutil.copyfile(os.path.join(d, f), os.path.join(d, 'baseline-' + f[len('native-'):]))
-    boot = state.get('games', state.game_key(work), {}).get('boot') or {}
-    with open(os.path.join(d, 'baseline.json'), 'w', encoding='utf-8') as f:
-        json.dump({'at': boot.get('at'), 'rex': boot.get('rex')}, f)
-    return True
-
-
-def regress_compare(job, slug, work):
-    """O nativo de antes contra o de agora, nos mesmos segundos: a diferença das imagens e, se
-    mudaram, o modelo barato diz se melhorou ou piorou. Guarda em state 'regress'."""
-    cfg = config.load()
-    d = compare_dir(slug)
-
-    def by_t(prefix):
-        out = {}
-        for f in os.listdir(d):
-            m = re.match(prefix + r'-(\d{3})\.png$', f)
-            if m:
-                out[int(m.group(1))] = os.path.join(d, f)
-        return out
-    base, new = by_t('baseline'), by_t('native')
-    pairs = [{'t': t, 'before': base[t], 'after': new[t], 'diff': _pair_diff(base[t], new[t])}
-             for t in sorted(base) if t in new]
-    try:
-        meta = json.load(open(os.path.join(d, 'baseline.json'), encoding='utf-8'))
-    except (OSError, ValueError):
-        meta = {}
-    after_rex = (state.get('games', state.game_key(work), {}).get('boot') or {}).get('rex')
-    out = {'at': jobs.now(), 'pairs': pairs, 'before_rex': meta.get('rex'), 'before_at': meta.get('at'),
-           'after_rex': after_rex}
-    if not pairs:
-        out.update(verdict='inconclusivo', summary='No captures to compare.')
-    elif max(p['diff'] for p in pairs) < 2.5:  # praticamente iguais: sem gastar o modelo
-        out.update(verdict='iguais', summary='The before and after pictures are practically the same '
-                   '(largest difference %.1f%%).' % max(p['diff'] for p in pairs))
-    else:
-        sheet = os.path.join(d, 'antes-depois.jpg')
-        _compare_sheet(pairs, sheet, keys=('before', 'after'), label='before (left)   |   after (right)')
-        out['sheet'] = sheet
-        try:
-            answer, cost = claude.ask(REGRESS_PROMPT.format(
-                title=games.info(work)['title'], sheet=os.path.basename(sheet),
-                times=', '.join(str(p['t']) for p in pairs), before=meta.get('rex') or 'before',
-                after=after_rex or 'now', route=cfg.get('compare_route') or 'none'),
-                REGRESS_SCHEMA, cwd=d)
-            notes = {int(x.get('t', -1)): x for x in answer.get('pairs') or []}
-            for pr in pairs:
-                n = notes.get(pr['t'])
-                if n:
-                    pr['change'], pr['note'] = n.get('change'), n.get('note')
-            out.update(verdict=answer.get('verdict'), summary=answer.get('summary'), cost=cost)
-        except Exception as e:  # noqa: BLE001
-            out.update(verdict='inconclusivo', summary='No opinion from the model (%s); largest difference '
-                       '%.0f%%.' % (e, max(p['diff'] for p in pairs)))
-    state.update('games', state.game_key(work), {'regress': out})
-    job.event('fail' if out['verdict'] == 'piorou' else 'ok' if out['verdict'] in ('iguais', 'melhorou') else 'info',
-              'Before / after: %s — %s' % (REGRESS_PT.get(out['verdict'], out['verdict']), out.get('summary') or ''),
-              cost=out.get('cost'))
-    return out
