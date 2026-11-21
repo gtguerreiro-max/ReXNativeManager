@@ -1479,7 +1479,7 @@ function openTextInput(initial, done) { return openKeyboard(initial, { done }); 
 const OSTEPS = [['download', 'Download'], ['build', 'Build on the PC'], ['deck', 'Send to the Deck'], ['library', 'Library']];
 const RSTEPS = [['deck', 'Collect on the Deck'], ['claude', 'Claude investigates'], ['deck_send', 'Send the fix']];
 // O que se pediu do Deck além de instalar e reportar (recompilar, atualizar, definições, apagar).
-const KIND_LABEL = { 'deck-report': 'Report', pipeline: 'Rebuild', deck: 'Send', 'deck-delete': 'Delete', 'deck-flush': 'Library', report: 'Report', 'deck-gestor': 'Launcher', 'deck-restore': 'Restore', 'deck-plugin': 'Plugin', 'deck-batch': 'All', 'linux-build': 'Linux build', 'linux-deck': 'Linux to Deck', 'linux-runner': 'Linux / Windows' };
+const KIND_LABEL = { gameplay: 'Gameplay scene', 'deck-report': 'Report', pipeline: 'Rebuild', deck: 'Send', 'deck-delete': 'Delete', 'deck-flush': 'Library', report: 'Report', 'deck-gestor': 'Launcher', 'deck-restore': 'Restore', 'deck-plugin': 'Plugin', 'deck-batch': 'All', 'linux-build': 'Linux build', 'linux-deck': 'Linux to Deck', 'linux-runner': 'Linux / Windows' };
 // O título sem o "Report:" que a tarefa já traz (a etiqueta diz o que é).
 const otitle = o => String(o.title || '').replace(/^(Report|Relatório|Reenviar para o Deck|Instalar para o Deck|Resend to the Deck|Install to the Deck|Delete from the Deck): /, '');
 const stepsOf = o => o.kind === 'deck-report' ? RSTEPS : o.kind === 'order' ? OSTEPS : [];

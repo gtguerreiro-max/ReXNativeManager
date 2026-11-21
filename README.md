@@ -617,6 +617,26 @@ each report (with the player's save) before fixing it, so that place is checked 
 change. They live in `data_dir/scenes/<game>/`, a few MB each; a trace from a build whose command
 structures changed is marked "needs recording again".
 
+**The gameplay scene.** The boot test's scene is mostly a title screen or a menu. So each game gets a
+scene of real gameplay once: a short assistant session (`gameplay_model`, Sonnet by default, at most
+`gameplay_minutes`) starts the game, drives it with the pad through the control file (new game,
+skip videos, defaults) until the player is playing, records a frame trace there, and looks at the
+same spot on the native and the classic renderer. The trace becomes the scene "Gameplay: ..." with
+reference pictures from the build the game has; the button route is kept for next time; and a
+native renderer wrong there sends an automatic report. It replaces the captures at 15/30/45/60 s,
+which mostly caught intros. When:
+
+- a new game: in a job of its own once its pipeline is through, in the reports' lane, so the
+  transfer to the Deck does not wait for it;
+- a game in a suspects batch without one: first, with the build from before the change, so the same
+  batch already compares real gameplay before and after.
+
+With a gameplay scene, a rebuild or an update of the game boots for 20 s (it only checks that the
+game starts), leaves out the 15/30/45/60 s comparison, and the test with the Deck's settings draws
+the gameplay scene with them (seconds, the very same frames on both sides) instead of a minute of
+the game. A scene that makes the game crash (or that the renderer hands to the classic one) ends at
+once and is skipped until the renderer changes, instead of holding a batch for 4 minutes.
+
 ### Folders
 
 | Folder | What it holds |

@@ -801,10 +801,21 @@ def game_captures(slug: str):
     return {'captures': out}
 
 
+@app.get('/api/games/{slug}/snapshots')
+def game_snapshots(slug: str):
+    """Os snapshots deste PC que um relatório leva (o Y no menu de definições, no último dia)."""
+    w = _work(slug)
+    return {'snapshots': list(reversed(claude.pc_snapshots(os.path.join(w, 'run'))))}
+
+
+def _snapshot_pngs(w):
+    return [p for s in claude.pc_snapshots(os.path.join(w, 'run')) for p in s['png']]
+
+
 @app.get('/api/games/{slug}/capture')
 def game_capture(slug: str, path: str):
     w = _work(slug)
-    if path not in covers.captures(w):
+    if path not in covers.captures(w) and path not in _snapshot_pngs(w):
         raise HTTPException(404)
     return FileResponse(path)
 
@@ -831,10 +842,13 @@ def game_report(slug: str, body: dict = Body(...)):
     allowed = set(covers.captures(w))
     caps = [c for c in body.get('captures') or [] if c in allowed]
     rid = '%s-%s' % (slug, jobs.now().replace(':', '').replace('-', ''))
-    state.update('reports', rid, {'work': state.game_key(w), 'slug': slug, 'at': jobs.now(),
-                                  'kind': body.get('kind') or 'Other', 'where': body.get('where') or 'PC',
-                                  'text': text, 'captures': caps,
-                                  'status': 'queued' if body.get('fix', True) else 'saved'})
+    rep = {'work': state.game_key(w), 'slug': slug, 'at': jobs.now(),
+           'kind': body.get('kind') or 'Other', 'where': body.get('where') or 'PC',
+           'text': text, 'captures': caps,
+           'status': 'queued' if body.get('fix', True) else 'saved'}
+    if isinstance(body.get('snapshots'), list):  # the PC snapshots left ticked in the dialog
+        rep['pc_snapshots'] = [os.path.basename(str(n)) for n in body['snapshots']]
+    state.update('reports', rid, rep)
     if not body.get('fix', True):
         return {'report': rid}
     title = games.info(w)['title']

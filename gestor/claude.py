@@ -366,6 +366,68 @@ FIRST_PLACE = """1. Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {nam
 """
 
 
+GAMEPLAY_PROMPT = """Find real gameplay in an Xbox 360 game recompiled with ReXGlue and drawn by ReXNative's
+native D3D12 renderer, record a frame trace there, and look at that place on both renderers. You only
+start the game, press its buttons and look: change no file, commit nothing.
+
+Game: {title} (folder name {slug}); the built game: {run}\\{name}.exe. Below, `live.ps1` is
+`powershell -ExecutionPolicy Bypass -File scripts\\live.ps1` (in your working directory); your live game
+has a state folder of its own.{route_hint}
+
+1. `live.ps1 start -Dir "{run}" -Exe {name}.exe`, then drive it with the game's own pad through the
+   control file (no window focus needed): `live.ps1 control "pad A 200"`, `"pad START 400"`,
+   `"pad DOWN 150"`, `"pad A+B 200"`, a stick held: `"pad none lx=32767 800"` (lx ly rx ry from
+   -32768 to 32767). Look every step or two with `live.ps1 frame <tag>` and read the PNG. Wait in
+   short steps (`Start-Sleep 5` to 15), never minutes blind. A lone START or BACK needs about 400 ms.
+2. Real gameplay is the player controlling the game: a level, a race, a board, a fight, a puzzle in
+   play. Not the title screen, menus, logos, videos, loading screens or a cutscene. Start a new game
+   (or a quick match, arcade or practice mode), skip what can be skipped (A, START or B on videos and
+   dialogs), accept defaults. If the game asks to overwrite a save, pick another slot or go back;
+   never delete saves. A tutorial is fine once the player is playing. Give it at most {limit} minutes.
+3. At gameplay, play a few seconds so things move on the screen, then `live.ps1 record 3` (it prints
+   the trace's path). Then the same spot on both renderers: `live.ps1 frame native`,
+   `live.ps1 control "renderer stock"`, `Start-Sleep 5`, `live.ps1 shot classic` (a window capture:
+   the renderer's own `frame` works only on the native one), `live.ps1 control "renderer native"`.
+   The classic one (ReXGlue's Xenos renderer) is the reference.
+   Compare the two pictures: motion between them is not a fault; black or white areas, missing
+   geometry or effects, wrong colours, see-through walls or garbage on the native one are.
+4. `live.ps1 stop`. Stop only the game you started; do not use the Steam Deck; do not kill other
+   processes.
+
+End with these lines, exactly in this form:
+SCENE: <the trace path that record printed, or "none" if gameplay was not reached>
+LABEL: <a few words on where in the game it is, e.g. "first race, city circuit">
+ROUTE: <the steps from the start that reached it, as <seconds waited before it>:pad:<BUTTONS>:<ms>, comma-separated, or "none">
+NATIVE: <"ok", or "wrong: <what the native renderer draws wrong there, compared with the classic>">
+PICTURES: <the native PNG path> <the classic PNG path>
+"""
+
+_LINE = lambda tag: re.compile(r'^\s*%s:\s*(.+?)\s*$' % tag, re.M)  # noqa: E731
+
+
+def gameplay(job, work, route=None):
+    """A sessão curta que leva o jogo até se estar a jogar e grava lá um trace. Devolve {summary,
+    scene, label, route, native, pictures, cost, ok}; scene None se não chegou ao jogo."""
+    from . import games
+    cfg = config.load()
+    g = games.info(work)
+    name = g.get('exe') or '?'
+    hint = ('\nA route that reached gameplay before (try it first, it may be out of date): %s' % route) if route else ''
+    limit = int(cfg.get('gameplay_minutes') or 12)
+    prompt = GAMEPLAY_PROMPT.format(title=g['title'], slug=g['slug'], run=os.path.join(work, 'run'), name=name,
+                                    route_hint=hint, limit=limit)
+    res = run(job, prompt, cwd=cfg['rexnative_dir'], work=work, tag='gameplay', git=False,
+              intro='Claude looks for gameplay in the game, to record a scene there',
+              model=cfg.get('gameplay_model') or None, effort='medium')
+    text = res.get('summary') or ''
+    pick = lambda tag: (_LINE(tag).search(text).group(1) if _LINE(tag).search(text) else '')  # noqa: E731
+    scene = (parse_scenes(text) or [''])[0].strip().strip('`"')
+    pictures = [p.strip('`"') for p in pick('PICTURES').split() if p.lower().endswith('.png')]
+    return dict(res, scene=scene if scene and scene.lower() != 'none' else None, label=pick('LABEL')[:120],
+                route=pick('ROUTE') if pick('ROUTE').lower() != 'none' else '', native=pick('NATIVE') or '',
+                pictures=pictures)
+
+
 SCENE_LINE = re.compile(r'^\s*SCENE:\s*(.+?)\s*$', re.M)
 
 
@@ -374,14 +436,14 @@ def parse_scenes(summary):
     return [m.group(1) for m in SCENE_LINE.finditer(summary or '')]
 
 
-def _snapshots(deck_snaps, run, hours=24):
-    """Os snapshots de depuração do jogador (o Y no menu de definições do ReXNative): os que vieram do
-    Deck com o relatório e os tirados neste PC nas últimas `hours` horas (run/snapshots)."""
+def pc_snapshots(run, hours=24, limit=2):
+    """Os snapshots tirados neste PC (run/snapshots/<data-hora>/) nas últimas `hours` horas, os
+    `limit` mais recentes: os que um relatório leva. O diálogo do relatório mostra-os."""
     import time
     pc = []
     root = os.path.join(run, 'snapshots')
     if os.path.isdir(root):
-        for n in sorted(os.listdir(root))[-2:]:
+        for n in sorted(os.listdir(root))[-limit:]:
             d = os.path.join(root, n)
             if os.path.isdir(d) and time.time() - os.path.getmtime(d) < hours * 3600:
                 fs = sorted(os.listdir(d))
@@ -389,9 +451,17 @@ def _snapshots(deck_snaps, run, hours=24):
                 if 'snapshot.txt' in fs:
                     with open(os.path.join(d, 'snapshot.txt'), encoding='utf-8', errors='replace') as f:
                         info = ' '.join(f.read().split())[:200]
-                pc.append({'name': n, 'info': info, 'where': 'this PC',
+                pc.append({'name': n, 'info': info, 'where': 'this PC', 'at': os.path.getmtime(d),
                            'png': [os.path.join(d, f) for f in fs if f.endswith('.png')],
                            'trace': [os.path.join(d, f) for f in fs if f.endswith('.rxt')]})
+    return pc
+
+
+def _snapshots(deck_snaps, run, hours=24, only=None):
+    """Os snapshots de depuração do jogador (o Y no menu de definições do ReXNative): os que vieram do
+    Deck com o relatório e os tirados neste PC nas últimas `hours` horas (run/snapshots). `only`: os
+    nomes dos do PC que o jogador deixou marcados no diálogo (None = todos, os relatórios de antes)."""
+    pc = [s for s in pc_snapshots(run, hours) if only is None or s['name'] in only]
     return [dict(s, where='the Steam Deck') for s in deck_snaps] + pc
 
 
@@ -434,7 +504,8 @@ def investigate(job, work, report):
     g = games.info(work)
     name = g.get('exe') or '?'
     caps = report.get('captures') or []
-    snaps = _snapshots(report.get('snapshots') or [], os.path.join(work, 'run'))
+    snaps = _snapshots(report.get('snapshots') or [], os.path.join(work, 'run'),
+                       only=report.get('pc_snapshots'))
     snap_pngs = {os.path.normcase(p) for sn in snaps for p in sn['png']}
     shown = [c for c in caps if os.path.normcase(c) not in snap_pngs]
     captures = ('Captures the user attached (look at them):\n' + ''.join('  %s\n' % c for c in shown)) if shown else ''
@@ -485,7 +556,8 @@ def investigate(job, work, report):
                extra_dirs=sorted({os.path.dirname(c) for c in caps + deck_files}) + [config.data_dir('compare')])
 
 
-def run(job, prompt, cwd, work, cheap=False, tag='1', intro='Claude', git=True, extra_dirs=()):
+def run(job, prompt, cwd, work, cheap=False, tag='1', intro='Claude', git=True, extra_dirs=(),
+        model=None, effort=None):
     """Corre o Claude com o pedido pelo stdin e a saída em stream-json (cada texto e ferramenta
     aparece na tarefa); devolve {summary, commits, pushed, edited, cost, ok, gave_up}."""
     cfg = config.load()
@@ -507,7 +579,11 @@ def run(job, prompt, cwd, work, cheap=False, tag='1', intro='Claude', git=True, 
     for d in sorted(set(extra_dirs)):
         if d and os.path.isdir(d):
             cmd += ['--add-dir', d]
-    if cheap:
+    if model:
+        cmd += ['--model', model]
+        if effort:
+            cmd += ['--effort', effort]
+    elif cheap:
         cmd += ['--model', cfg.get('claude_cheap_model') or 'haiku']
     else:
         if cfg['claude_model']:

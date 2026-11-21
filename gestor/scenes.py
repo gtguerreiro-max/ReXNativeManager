@@ -269,6 +269,11 @@ def make_refs(job, work, slug, sid):
     return meta
 
 
+def gameplay(slug):
+    """As cenas de jogo do jogo (a sessão que o leva até se estar a jogar), as que ainda servem."""
+    return [m for m in scenes(slug) if m.get('source') == 'gameplay' and not m.get('stale')]
+
+
 def pending_refs(slug):
     work = games.find(slug)
     return [m for m in scenes(slug) if not m.get('frames') and not m.get('stale')

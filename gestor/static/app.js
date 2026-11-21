@@ -449,7 +449,7 @@ async function loadAchievements() {
 
 // -- cenas de teste: frames do jogo gravados (traces do ReXNative), desenhados outra vez depois de cada
 // mudança e comparados pixel a pixel com a referência (os mesmos frames: só o renderizador muda) --
-const SCENE_SOURCE = { boot: 'Where the boot test ends', play: 'Recorded while playing', report: 'From a report', test: 'Test' };
+const SCENE_SOURCE = { gameplay: 'Gameplay (found by Claude)', boot: 'Where the boot test ends', play: 'Recorded while playing', report: 'From a report', test: 'Test' };
 const SCENE_CLS = { same: 'ok', igual: 'ok', melhor: 'ok', pior: 'bad', inconclusivo: 'warn', stale: 'warn', failed: 'bad' };
 let sceneTimer = null;
 async function loadScenes() {
@@ -674,6 +674,9 @@ async function reportDialog() {
   const slug = cur.slug, g = cur;
   let caps = [];
   try { caps = (await api(`/api/games/${encodeURIComponent(slug)}/captures`)).captures; } catch (e) { /* sem capturas */ }
+  let snaps = [];
+  try { snaps = (await api(`/api/games/${encodeURIComponent(slug)}/snapshots`)).snapshots; } catch (e) { /* sem snapshots */ }
+  const snapWhen = n => n.length >= 13 ? `${n.slice(0, 4)}-${n.slice(4, 6)}-${n.slice(6, 8)} ${n.slice(9, 11)}:${n.slice(11, 13)}` : n;
   if (!reportKinds.length) reportKinds = ['Gráficos no renderizador nativo', 'Gráficos no clássico', 'Fecha ou bloqueia', 'Lento / FPS', 'Som', 'Comandos', 'Outro'];
   // Com a comparação a dizer que o nativo está mal, os pares vão marcados e o texto já começa.
   const bad = g.compare && g.compare.verdict === 'nativo_com_erros';
@@ -687,12 +690,17 @@ async function reportDialog() {
     ${caps.length ? `<p class="small muted" style="margin:10px 0 4px">Captures that show the problem (Claude sees them):</p>
       <div class="picks" style="max-height:230px;overflow:auto">${caps.map((c, i) => `<label class="pick" style="cursor:pointer">
         <img src="${capUrl(slug, c.path)}" style="max-height:90px">
-        <span><input type="checkbox" class="rpcap" value="${esc(c.path)}" ${(bad ? pairPaths.has(c.path) : i === 0) ? 'checked' : ''}> ${esc(c.source)} · ${esc(c.name)}</span></label>`).join('')}</div>` : ''}
-    <p class="small muted" style="margin:10px 0 0">Tip: at the place, in the game, open the settings menu (Back + Start or F1; on the Deck View + Menu) and press Y. That moment is saved as a snapshot (the picture and the next frames), and a report sends it: Claude sees what you saw and replays those frames.</p>
+        <span><input type="checkbox" class="rpcap" value="${esc(c.path)}" ${(bad ? pairPaths.has(c.path) : !snaps.length && i === 0) ? 'checked' : ''}> ${esc(c.source)} · ${esc(c.name)}</span></label>`).join('')}</div>` : ''}
+    ${snaps.length ? `<p class="small muted" style="margin:10px 0 4px">Snapshots you took on this PC (the last day): the ticked ones go with the report. Claude looks at the picture and replays the frames after it.</p>
+      <div class="picks">${snaps.map(s => `<label class="pick" style="cursor:pointer" title="${esc(s.info || '')}">
+        ${s.png.length ? `<img src="${capUrl(slug, s.png[0])}" style="max-height:120px">` : ''}
+        <span><input type="checkbox" class="rpsnap" value="${esc(s.name)}" checked> ${esc(snapWhen(s.name))}${s.trace.length ? '' : ' · no trace'}</span></label>`).join('')}</div>`
+    : `<p class="small muted" style="margin:10px 0 0">Tip: at the place, in the game, open the settings menu (Back + Start or F1; on the Deck View + Menu) and press Y. That moment is saved as a snapshot (the picture and the next frames), and it shows here: the report sends it, so Claude sees what you saw and replays those frames.</p>`}
     <label style="display:block;margin-top:10px"><input type="checkbox" id="rpfix" checked> Ask Claude to investigate and fix it (strong model; opens the game on the PC to look)</label>`, 'Send');
   if (!ok) return;
   const body = { kind: $('#rpkind').value, where: $('#rpwhere').value, text: $('#rptext').value.trim(),
     captures: [...document.querySelectorAll('.rpcap')].filter(c => c.checked).map(c => c.value), fix: $('#rpfix').checked };
+  if (snaps.length) body.snapshots = [...document.querySelectorAll('.rpsnap')].filter(c => c.checked).map(c => c.value);
   if (!body.text) return toast('Describe what you see, so Claude knows what to look for', true);
   try {
     const r = await api(`/api/games/${encodeURIComponent(slug)}/report`, { body });

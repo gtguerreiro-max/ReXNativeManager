@@ -8,10 +8,26 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.20.2'
+VERSION = '1.21.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.21.0', '2026-11-21', [
+        'Gameplay scenes: each game gets a test scene of real gameplay once. A short Claude session (Sonnet) '
+        'starts the game, drives it with the pad until the player is playing, records the frames there, and '
+        'looks at that spot on the native and the classic renderer (a native one wrong there sends a report). '
+        'A new game gets it in a job of its own after its pipeline, so the transfer to the Deck does not wait; '
+        'a game in a suspects batch gets it first, with the build from before the change, so the same batch '
+        'already compares real gameplay. Castle Crashers: the opening barn, in 4 minutes.',
+        'With a gameplay scene a rebuild or update boots for 20 s, the comparison of captures at 15/30/45/60 s '
+        'is left out, and the test with the Deck settings draws the gameplay scene with them (seconds, the same '
+        'frames on both sides) instead of a minute of the game.',
+    ]),
+    ('1.20.3', '2026-11-21', [
+        'Report a problem (on the PC) shows the snapshots you took on this PC in the last day (the settings '
+        'menu, then Y), with their picture: the ticked ones go with the report, and you can untick one that '
+        'shows something else. Before, they went along without showing in the dialog.',
+    ]),
     ('1.20.2', '2026-11-21', [
         'A test scene that makes the game crash no longer holds a batch for 4 minutes: the scene is played '
         'while its log is read, and a crash (or a fault the renderer caught) ends it at once. Such a scene is '

@@ -968,11 +968,56 @@ def _dark_extra(a, b):
     return sum(1 for x, y in zip(pa, pb) if y < 12 and x > 30) / len(pa)
 
 
+DECK_SCENE_PROMPT = """Compare the Xbox 360 game "{title}" drawn by the same renderer with two settings. Read the
+image {sheet}: each row is one frame of the same recorded gameplay scene (a frame trace: the very same
+frames, drawn twice); on the LEFT with the PC's settings (no upscaler), on the RIGHT with the Steam
+Deck's settings (1280x800 and the FSR upscaler on), on the same PC. So any difference is the settings'.
+
+Is the RIGHT one broken where the LEFT is right? Broken: part of the screen missing or black, blocks of
+garbage or noise, wrong colours, things see-through or missing, a black frame where the left has a
+picture. Not broken: the other size or aspect (1280x800), a softer or sharper picture, small brightness
+differences.
+Share of each frame that is black on the right but not on the left (by row): {dark}
+
+verdict: "iguais" (the right is fine in every row), "deck_com_erros" (the right is broken in at least
+one row), "inconclusivo".
+summary: one or two sentences in English.
+pairs: for each row, t (the row number, from 1), deck_ok (the right is fine) and a short note in English."""
+
+
+def _deck_scene(job, ctx, flags):
+    """The Deck settings test on the gameplay scene: its reference pictures (PC settings) against the
+    same frames drawn with the Deck's. A few seconds instead of a minute of the game, and the same
+    frames on both sides. None when the game has no gameplay scene with pictures."""
+    from . import scenes
+    slug, work = ctx['slug'], ctx['work']
+    for m in scenes.gameplay(slug):
+        refs = scenes.refs(slug, m['id'])
+        if not refs or scenes.broken_here(m, work):
+            continue
+        out_dir = os.path.join(scenes.scene_dir(slug, m['id']), 'deck')
+        try:
+            decks = scenes.play(job, work, os.path.join(scenes.scene_dir(slug, m['id']), 'scene.rxt'), out_dir,
+                                extra=flags.split())
+        except scenes.SceneError as e:
+            job.event('info', 'The gameplay scene with the Deck settings gave no pictures: %s' % e)
+            return {'verdict': 'deck_com_erros' if e.crashed else 'inconclusivo', 'pairs': [],
+                    'summary': 'With the Deck settings the gameplay scene %s: %s' % (
+                        'crashed' if e.crashed else 'gave no pictures', str(e)[:300])}
+        pairs = [{'t': i + 1, 'native': a, 'deck': b, 'dark': round(_dark_extra(a, b), 3)}
+                 for i, (a, b) in enumerate(zip(refs, decks))]
+        return {'pairs': pairs, 'scene': m['id'], 'label': m.get('label')}
+    return None
+
+
 def step_deckpc(job, ctx, attempt):
     """O jogo no PC com as definições do Deck, comparado com o teste de arranque. Não falha o
     pipeline: marca o jogo e, com erros, manda-os ao Claude como um problema do Deck."""
     cfg = config.load()
     work = ctx['work']
+    from . import scenes as _scenes
+    if cfg.get('gameplay_scenes', True) and _scenes.gameplay(ctx['slug']):
+        return _step_deck_scene(job, ctx)
     name = games.exe_name(work)
     run = os.path.join(work, 'run')
     key = state.game_key(work)
@@ -1031,6 +1076,141 @@ def step_deckpc(job, ctx, attempt):
     if out['verdict'] == 'deck_com_erros':
         ctx['deck_faults'] = out
     return True, {'summary': text}
+
+
+def _step_deck_scene(job, ctx):
+    """step_deckpc with the gameplay scene: the same pairs, sheet, model verdict and report."""
+    work = ctx['work']
+    key = state.game_key(work)
+    try:
+        flags = deck_flags(work)
+    except Exception as e:  # noqa: BLE001
+        job.event('info', 'Could not read the Deck settings: %s' % e)
+        return True, {'summary': 'no Deck settings'}
+    found = _deck_scene(job, ctx, flags)
+    if found is None:
+        job.event('info', 'The gameplay scene has no reference pictures yet: no Deck settings test this time')
+        return True, {'summary': 'nothing to compare'}
+    out = dict(found, at=jobs.now(), flags=flags, from_scene=True)
+    pairs = out.get('pairs') or []
+    if pairs:
+        sheet = os.path.join(compare_dir(ctx['slug']), 'deck-pc.jpg')
+        _compare_sheet(pairs, sheet, keys=('native', 'deck'),
+                       label='PC settings (left)   |   Deck settings (right), the gameplay scene')
+        out['sheet'] = sheet
+        dark = ', '.join('row %d: %.0f%%' % (p['t'], 100 * p['dark']) for p in pairs)
+        try:
+            answer, cost = claude.ask(DECK_SCENE_PROMPT.format(
+                title=games.info(work)['title'], sheet=os.path.basename(sheet), dark=dark),
+                DECK_SCHEMA, cwd=compare_dir(ctx['slug']))
+            notes = {int(x.get('t', -1)): x for x in answer.get('pairs') or []}
+            for pr in pairs:
+                n = notes.get(pr['t'])
+                if n:
+                    pr['deck_ok'] = bool(n.get('deck_ok'))
+                    pr['note'] = n.get('note')
+            out.update(verdict=answer.get('verdict'), summary=answer.get('summary'), cost=cost)
+        except Exception as e:  # noqa: BLE001 - sem o modelo, a parte preta a mais
+            worst = max(p['dark'] for p in pairs)
+            out.update(verdict='deck_com_erros' if worst > 0.2 else 'inconclusivo',
+                       summary='No opinion from the model (%s); with the Deck settings up to %.0f%% of '
+                               'the picture is black where it is not on the PC.' % (e, 100 * worst))
+    state.update('games', key, {'deckpc': out})
+    text = {'iguais': 'Same with the Deck settings', 'deck_com_erros': 'ERRORS WITH THE DECK SETTINGS',
+            'inconclusivo': 'Inconclusive'}.get(out.get('verdict'), out.get('verdict'))
+    job.event('ok' if out.get('verdict') == 'iguais' else 'info',
+              '%s (the gameplay scene): %s' % (text, out.get('summary') or ''), cost=out.get('cost'))
+    if out.get('verdict') == 'deck_com_erros' and pairs:
+        ctx['deck_faults'] = out
+    return True, {'summary': text}
+
+
+# -- the gameplay scene ---------------------------------------------------------------------------
+def gameplay_wanted(work, slug):
+    """Whether this game should get a gameplay scene now: the setting on, the game built, on the
+    native renderer, and none yet."""
+    from . import scenes
+    cfg = config.load()
+    if not cfg.get('gameplay_scenes', True) or not cfg.get('claude_enabled', True):
+        return False
+    name = games.exe_name(work)
+    if not name or not os.path.exists(os.path.join(work, 'run', name + '.exe')) or _stock(work, name):
+        return False
+    if (games.info(work).get('classic') or {}).get('pc') or xna.is_xna_work(work):
+        return False
+    return not scenes.gameplay(slug)
+
+
+def record_gameplay(job, work, slug, report=True):
+    """The assistant drives the game to real gameplay and records a frame trace there: it becomes
+    the game's gameplay scene, with reference pictures drawn by the build the game has now. Its
+    look at the native and the classic renderer at that spot replaces the 15/30/45/60 s captures:
+    when the native one is wrong there and `report`, an automatic report goes to Claude. Returns
+    the scene's id, or None."""
+    from . import scenes
+    key = state.game_key(work)
+    before = state.get('games', key, {}).get('gameplay') or {}
+    job.event('step', 'Gameplay scene: Claude drives the game to real gameplay and records it there')
+    try:
+        g = claude.gameplay(job, work, route=before.get('route'))
+    finally:
+        stop_leftover_live(job, work)
+    info = {'at': jobs.now(), 'job': job.id, 'label': g.get('label'), 'route': g.get('route') or before.get('route'),
+            'native': g.get('native'), 'pictures': g.get('pictures'), 'cost': g.get('cost')}
+    trace = g.get('scene')
+    run_dir = os.path.normcase(os.path.abspath(os.path.join(work, 'run')))
+    if not trace or not os.path.isfile(trace) or not os.path.normcase(os.path.abspath(trace)).startswith(run_dir):
+        info['reached'] = False
+        state.update('games', key, {'gameplay': info})
+        job.event('info', 'No gameplay scene: %s' % (g.get('summary') or 'gameplay was not reached')[:400])
+        return None
+    meta = scenes.add(work, slug, trace, 'gameplay', 'Gameplay: %s' % (g.get('label') or 'found by Claude'))
+    info.update(reached=True, scene=meta['id'])
+    try:
+        scenes.make_refs(job, work, slug, meta['id'])
+        job.event('ok', 'Gameplay scene "%s" recorded, with its reference pictures' % meta['label'])
+    except scenes.SceneError as e:
+        job.event('info', 'Gameplay scene recorded, but its pictures could not be drawn: %s' % e)
+    state.update('games', key, {'gameplay': info})
+    native = (g.get('native') or '').strip()
+    if native.lower().startswith('wrong'):
+        job.event('fail', 'At the gameplay scene the native renderer is %s' % native[:300])
+        if report and config.load().get('compare_auto_report', True):
+            text = ('Automatic report: at real gameplay ("%s"), the native renderer draws differently from '
+                    'ReXGlue\'s Xenos renderer (the reference), at the same spot: %s. The gameplay scene\'s '
+                    'trace is a test scene of this game; the button route that reaches it: %s.' % (
+                        g.get('label') or '?', native, info.get('route') or 'unknown'))
+            caps = [p for p in g.get('pictures') or [] if os.path.isfile(p)]
+            _auto_report(job, work, slug, ' (gameplay)', ('Graphics on the native renderer', 'PC'), text, caps,
+                         'The native renderer is wrong at gameplay: Claude is asked to fix it, in the next job')
+    elif native:
+        job.event('ok', 'At the gameplay scene the native renderer draws like the classic one')
+    return meta['id']
+
+
+def gameplay_job(job, work):
+    """The background job of a new game's gameplay scene (in the reports' lane, with its copy of
+    ReXNative: the pipeline and the Deck transfer do not wait for it)."""
+    slug = os.path.basename(os.path.abspath(work))
+    with lane_settings(job), game_turn(job, slug):
+        if not gameplay_wanted(work, slug):
+            job.event('info', 'The game has its gameplay scene already, or cannot get one now')
+            return {'scene': None}
+        return {'scene': record_gameplay(job, work, slug)}
+
+
+def submit_gameplay(job, work, slug):
+    """Queues the gameplay scene of a game that has none (one job per game)."""
+    if SUBMIT is None or not gameplay_wanted(work, slug):
+        return None
+    m = jobs.Job.manager
+    if m is not None and any(j.kind == 'gameplay' for j in m.active(game=slug)):
+        return None
+    j2 = SUBMIT('gameplay', 'Gameplay scene: %s' % games.info(work)['title'], lambda j: gameplay_job(j, work),
+                report_lane(), slug, {})
+    job.event('info', 'Its gameplay scene comes next, in a job of its own (Claude finds real gameplay)',
+              job=j2.id)
+    return j2
 
 
 def report_lane():
@@ -1157,16 +1337,20 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
     clássico quando o nativo não passa (não nos testes de suspeitos nem nos relatórios, onde
     esconderia o que a mudança estragou)."""
     cfg = config.load()
-    tests = ['boot', 'scenes'] + (['compare'] if cfg.get('compare_enabled', True) else []) + (
+    slug = catalog.slug(source) if source else os.path.basename(os.path.abspath(work))
+    # A game with its gameplay scene is compared there (the scene is the same frames every time):
+    # no captures at 15/30/45/60 s of intros and menus, and a rebuild only checks that it boots.
+    from . import scenes as _scenes
+    played = bool(cfg.get('gameplay_scenes', True)) and bool(_scenes.gameplay(slug))
+    tests = ['boot', 'scenes'] + (['compare'] if cfg.get('compare_enabled', True) and not played else []) + (
         ['deckpc'] if cfg.get('deck_test_enabled', True) else [])
     if source:
-        slug = catalog.slug(source)
         work = os.path.join(cfg['work_dir'], slug)
         steps = steps or ['prepare'] + tests
     else:
         work = os.path.abspath(work)
-        slug = os.path.basename(work)
         steps = steps or ['build'] + tests
+        quick = quick or played
     with game_turn(job, slug):
         return _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg)
 
@@ -1286,6 +1470,9 @@ def _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg):
             job.result['auto_report'] = rid
         state.update('games', key, {'pipeline': {'job': job.id, 'status': 'ok', 'at': jobs.now(),
                                                  'fixes': len(fixes)}})
+        if auto_report and not job.result.get('batch_child') and not ctx.get('native_handover') and \
+                not ctx.get('classic_fallback'):
+            submit_gameplay(job, work, slug)
         return {'work': work, 'slug': slug}
     except jobs.Cancelled:
         state.update('games', key, {'pipeline': {'job': job.id, 'status': 'cancelled', 'at': jobs.now()}})
@@ -1588,6 +1775,19 @@ def batch_job(job, slugs, reason=''):
         rexrepo.sync(job)
         job.result['synced'] = True
     works = [w for w in (games.find(s) for s in slugs) if w and not xna.is_xna_work(w)]
+    # A game without a gameplay scene gets it now, with the build it has (from before the change):
+    # its reference pictures are the old renderer's, so this same batch compares real gameplay.
+    for w in works:
+        job.check()
+        slug = os.path.basename(w)
+        if gameplay_wanted(w, slug):
+            with game_turn(job, slug):
+                try:
+                    record_gameplay(job, w, slug, report=False)
+                except jobs.Cancelled:
+                    raise
+                except Exception as e:  # noqa: BLE001 - the batch goes on without it
+                    job.event('info', 'No gameplay scene for %s: %s' % (slug, str(e)[:200]))
     pre = _Prebuild(job, works) if works else None
     try:
         return _batch_rows(job, slugs, reason, pre)

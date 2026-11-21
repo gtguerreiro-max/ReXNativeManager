@@ -67,6 +67,14 @@ DEFAULTS = {
     # O arranque nos testes de suspeitos: só se o jogo arranca (frames, sem crash); as cenas de teste
     # é que comparam a imagem. Um jogo sem a cena do arranque faz o teste inteiro (grava-a).
     'quick_boot_seconds': 20,
+    # A cena de jogo: uma sessão curta do assistente leva o jogo até se estar a jogar e grava lá um
+    # trace (a cena de teste principal do jogo), e compara aí o nativo com o clássico. Num jogo novo
+    # corre em segundo plano depois do pipeline; num lote de suspeitos, antes de compilar (com a
+    # compilação de antes da mudança). Com ela, as recompilações deixam a comparação aos 15/30/45/60 s
+    # e o teste com as definições do Deck desenha a cena em vez de um minuto de jogo.
+    'gameplay_scenes': True,
+    'gameplay_model': 'sonnet',
+    'gameplay_minutes': 12,
     'boot_seconds_max': 150,
     'boot_min_frames': 150,
     # Capturas aos mesmos segundos no nativo (o teste de arranque) e no clássico (o renderizador
