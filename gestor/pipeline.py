@@ -64,11 +64,19 @@ def step_prepare(job, ctx, attempt):
     rc = job.run(cmd, cwd=cfg['rexnative_dir'], env=config.tool_env(), log_path=log)
     prep = games._read_json(os.path.join(ctx['work'], 'prepare.json'))
     if rc == 0 and prep.get('ok'):
-        return True, {'summary': 'prepared and built'}
+        return True, {'summary': 'prepared and built%s' % prepare_times(log, ctx['slug'])}
     why = prep.get('error') or 'exit code %d' % rc
     return False, _fail('prepare', 'Preparation failed: %s' % why[:300], command=_cmdline(cmd),
                         cwd=cfg['rexnative_dir'], rc=rc, log_path=log, tail=jobs.tail(log, 220),
                         details='prepare.json error: %s\n' % prep.get('error') if prep.get('error') else '')
+
+
+def prepare_times(log, slug):
+    """Where the prepare's time went, from the game's last line in its log (ReXNative 529b702:
+    "<game>: 88 s (codegen 6 s in 4, build 59 s in 2, game 3 s in 1)"), as " in 88 s (...)"; empty
+    with an older ReXNative. In the job's own log it has a time beside it, to measure prepares."""
+    found = re.findall(r'^%s: (\d+ s(?: \([^()\r\n]*\))?)[ \t\r]*$' % re.escape(slug), jobs.tail(log, 400), re.M)
+    return ' in %s' % found[-1] if found else ''
 
 
 def step_build(job, ctx, attempt):

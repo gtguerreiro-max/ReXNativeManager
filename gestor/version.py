@@ -8,10 +8,16 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.18.1'
+VERSION = '1.18.2'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.18.2', '2026-11-21', [
+        'The Prepare step says where its time went: "prepared and built in 88 s (codegen 6 s in 4, build '
+        '59 s in 2, game 3 s in 1)", the seconds and the number of codegen runs, builds and runs of the '
+        'game, from the line ReXNative now ends each prepare with. A slow prepare can be read from the job '
+        'itself (the 98 minutes of one were 33 codegen runs, found only by counting lines).',
+    ]),
     ('1.18.1', '2026-11-21', [
         'Downloads on a line that drops now and then finish: a dropped connection that had brought data '
         '(8 MB or more) no longer counts as a failed try. The five tries are of drops in a row that bring '
