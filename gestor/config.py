@@ -54,6 +54,9 @@ DEFAULTS = {
     # sem crash; espera boot_seconds, ou até boot_seconds_max se ainda não houver estatísticas (a
     # primeira vez de uma build nova pode passar dos 60 s).
     'boot_seconds': 60,
+    # O arranque nos testes de suspeitos: só se o jogo arranca (frames, sem crash); as cenas de teste
+    # é que comparam a imagem. Um jogo sem a cena do arranque faz o teste inteiro (grava-a).
+    'quick_boot_seconds': 20,
     'boot_seconds_max': 150,
     'boot_min_frames': 150,
     # Capturas aos mesmos segundos no nativo (o teste de arranque) e no clássico (o renderizador

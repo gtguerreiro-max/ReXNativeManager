@@ -52,6 +52,8 @@ couch with the controller.
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your
   Deck games with each one's versions and fixes, the games on the PC, the catalogue (pick a game
   and it arrives in your library), requests, free space, **Play**, and reports from the Deck.
+- **Snapshots for reports:** in the game, the settings menu and Y save that moment (the picture
+  and the next frames as a trace); the next report sends them, and Claude replays those frames.
 - **Achievements:** each game's Xbox 360 achievements (name, description, gamerscore, icon; secret
   ones stay hidden until unlocked), with the ones you unlocked on the Deck or the PC and when, on the
   game page and in Deck mode, which also tells you about new ones.
@@ -137,6 +139,15 @@ From download to the Steam Deck:
    (PC, Deck), what you see and the captures that show it; Claude (the strong model) investigates
    with the game running, fixes, builds, and the game is tested again. Until there is a fix, a
    button puts the game on the classic renderer (PC or Deck).
+   **Snapshots**: at the place, in the game, the settings menu (View + Menu on the Deck, Back +
+   Start or F1 on the PC) and then Y saves that moment in the game's `snapshots\` folder: the frame
+   as shown and a frame trace of the next frames (ReXNative's renderer). A report sends the newest
+   ones (the last day's): from the Deck they come with the report ("Send the snapshots you took",
+   on by default, and the automatic screenshot is then off), on the PC Claude finds them in
+   `run\snapshots`. Claude looks at the picture and plays the trace on the PC first: what the game
+   handed the renderer there, with no place to reach (the Deck runs the same executable); right on
+   the PC while the Deck's picture is wrong, the fault is in what differs on the Deck. Deck mode
+   counts them on the game's sheet and says when a new one was taken.
    The instructions it gets (`claude.REPORT_PROMPT`) are about spending its time well, measured on
    the reports so far (where an hour went: reaching the place again after every rebuild, waiting
    minutes blind, searching the recompiled game's code). It reaches the place once (with the
@@ -521,6 +532,14 @@ the other games that go through the code that changed, seen in their logs and la
 then queues a job that builds and tests only those, and says whether any got worse: the boot
 failed, or one of its **test scenes** got worse. In Jobs, "Test games…" does the same for the games
 you choose.
+
+It is quick about it: the next game builds while one is being tested (the build is the processor's
+work, the test the graphics card's; a build that fails there runs again in the game's Build step,
+and if Claude changes the code mid-batch the rest build one at a time), and the boot test only
+checks that the game starts (`boot_min_frames` and no crash, `quick_boot_seconds`, 20 s) instead
+of the full minute, since the test scenes compare the picture. A game without its boot scene still
+gets the full boot test once, to record it. Measured on a batch of six games: about 2.5 minutes a
+game before (a build of 30 to 70 s, then a boot test of 68 s, then the scenes).
 
 ### Achievements
 

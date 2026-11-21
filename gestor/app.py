@@ -1370,7 +1370,9 @@ def _deck_view(d):
             'art': 'portrait' in (loc.get('art') or []), 'on_pc': bool(loc), 'mtime': g.get('mtime'),
             'appid': (sc or {}).get('appid'), 'linux': bool(g.get('linux')), 'runner': g.get('runner') or 'windows',
             'job': act[0].id if act else None, 'gestor': bool(sc and sc.get('appid') == gid),
-            'achievements': achievements.summary(loc['work'], g['slug']) if loc.get('work') else None})
+            'achievements': achievements.summary(loc['work'], g['slug']) if loc.get('work') else None,
+            'snapshots': len(deck.recent_snapshots(g)),
+            'snapshot_at': max([s.get('mtime') or 0 for s in g.get('snapshots') or []] or [0]) or None})
     return out
 
 
@@ -1968,6 +1970,18 @@ def _deck_saves_to_pc(job, dk, g, w, slug, dest, rid):
         put['files'], '; the PC saves from before are in %s' % put['backup'] if put['backup'] else ''))
 
 
+def _snapshot_brief(path):
+    """Uma pasta de snapshot (snapshots/<data-hora>/): as imagens, os traces e o snapshot.txt."""
+    fs = sorted(os.listdir(path)) if os.path.isdir(path) else []
+    txt = ''
+    if 'snapshot.txt' in fs:
+        with open(os.path.join(path, 'snapshot.txt'), encoding='utf-8', errors='replace') as f:
+            txt = ' '.join(f.read().split())[:200]
+    return {'dir': path, 'name': os.path.basename(path), 'info': txt,
+            'png': [os.path.join(path, f) for f in fs if f.endswith('.png')],
+            'trace': [os.path.join(path, f) for f in fs if f.endswith('.rxt')]}
+
+
 def deck_report_job(job, w, slug, body, rid):
     hooks = orders.Hooks
     job.progress = orders._progress(job, hooks)  # a fase do Claude, ou o que a tarefa dele espera
@@ -1997,6 +2011,14 @@ def deck_report_job(job, w, slug, body, rid):
                         job.event('info', 'No capture: %s' % e)
             if body.get('saves', True):
                 _deck_saves_to_pc(job, dk, g, w, slug, dest, rid)
+            if body.get('snapshots', True) and deck.recent_snapshots(g):
+                try:
+                    snaps = deck.fetch_snapshots(job, dk, g, dest)
+                except (RuntimeError, OSError, tarfile.TarError) as e:
+                    snaps = []
+                    job.event('info', 'The snapshots did not come: %s' % e)
+                state.update('reports', rid, {'snapshots': [_snapshot_brief(p) for p in snaps]})
+                files += [f for p in snaps for f in _snapshot_brief(p)['png']]
         else:
             job.event('info', '%s is not on the Deck: sending only the description' % slug)
     else:
@@ -2042,7 +2064,8 @@ def remote_report(slug: str, body: dict = Body(...)):
     j = manager.submit('deck-report', 'Report: %s' % games.info(w)['title'],
                        lambda job: deck_report_job(job, w, slug, body, rid), lane='orders', game=slug,
                        params={'report': rid, 'chips': chips, 'capture': bool(body.get('capture')),
-                               'saves': bool(body.get('saves', True))})
+                               'saves': bool(body.get('saves', True)),
+                               'snapshots': bool(body.get('snapshots', True))})
     return _job(j)
 
 

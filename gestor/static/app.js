@@ -687,6 +687,7 @@ async function reportDialog() {
       <div class="picks" style="max-height:230px;overflow:auto">${caps.map((c, i) => `<label class="pick" style="cursor:pointer">
         <img src="${capUrl(slug, c.path)}" style="max-height:90px">
         <span><input type="checkbox" class="rpcap" value="${esc(c.path)}" ${(bad ? pairPaths.has(c.path) : i === 0) ? 'checked' : ''}> ${esc(c.source)} · ${esc(c.name)}</span></label>`).join('')}</div>` : ''}
+    <p class="small muted" style="margin:10px 0 0">Tip: at the place, in the game, open the settings menu (Back + Start or F1; on the Deck View + Menu) and press Y. That moment is saved as a snapshot (the picture and the next frames), and a report sends it: Claude sees what you saw and replays those frames.</p>
     <label style="display:block;margin-top:10px"><input type="checkbox" id="rpfix" checked> Ask Claude to investigate and fix it (strong model; opens the game on the PC to look)</label>`, 'Send');
   if (!ok) return;
   const body = { kind: $('#rpkind').value, where: $('#rpwhere').value, text: $('#rptext').value.trim(),

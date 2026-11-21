@@ -251,6 +251,7 @@ async function refreshHome(readDeck, manual) {
     S.home = h;
     notifyOrders(prev, h);
     notifyAchievements(h);
+    notifySnapshots(h);
     status();
     const n = (h.orders || []).filter(o => o.status === 'running' || o.status === 'queued').length;
     $('#ordn').textContent = n;
@@ -718,6 +719,7 @@ function openDeckGame(slug) {
         <span>Location</span><b>${g.where === 'sd' ? 'microSD card' : 'Internal storage'}</b>
         <span>Saves</span><b>${g.saves ? g.saves + ' save(s)' : 'none yet'}</b>
         <span>Last played</span><b>${g.last_played ? ago(g.last_played) : 'never'}</b>
+        ${g.snapshots ? `<span>Snapshots</span><b>${g.snapshots} in the last day (newest ${ago(g.snapshot_at)})</b>` : ''}
         ${g.achievements && g.achievements.count ? `<span>Achievements</span><b>${g.achievements.unlocked} of ${g.achievements.count} · ${g.achievements.got_score} of ${g.achievements.gamerscore} G</b>` : ''}
       </div>
       ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
@@ -845,6 +847,17 @@ async function openAchievements(slug) {
     <div class="acts"><button class="btn f" onclick="closeLayer()">Close</button></div></div>`, { focus: '.ach' });
 }
 // Conquistas novas desde a última vez que o Gestor as viu (o PC lê-as do Deck sempre que o alcança).
+// A snapshot taken in a game since the Manager last looked: say how to send it.
+const SNAP_KEY = 'gestor-snap-last';
+function notifySnapshots(h) {
+  const gs = (h.games || []).filter(g => g.snapshot_at);
+  if (!gs.length) return;
+  const newest = gs.reduce((a, g) => g.snapshot_at > a.snapshot_at ? g : a);
+  let last = null;
+  try { last = localStorage.getItem(SNAP_KEY); localStorage.setItem(SNAP_KEY, String(newest.snapshot_at)); } catch (e) { return; }
+  if (last !== null && newest.snapshot_at > parseFloat(last))
+    toast(`Snapshot from ${newest.title}: open the game here and Report a problem to send it to Claude`);
+}
 const ACH_KEY = 'gestor-ach-last';
 function notifyAchievements(h) {
   const r = h.achievements_recent || [];
@@ -1275,7 +1288,9 @@ function openReport(slug) {
     <div class="tools" style="margin:0 0 12px">${RCHIPS.map(([k, t]) => `<button class="pill f" data-chip="${k}" data-hint="Choose" onclick="this.classList.toggle('on')">${esc(t)}</button>`).join('')}</div>
     <button class="check f" id="rtext" data-hint="Type" onclick="reportText()"><span class="box">✎</span><span id="rtextv">Write more (on-screen keyboard)</span></button>
     <div style="height:10px"></div>
-    <button class="check f on" id="rcap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Take a screenshot on the Deck: the game opens, is captured and closes on its own</button>
+    ${g.snapshots ? `<button class="check f on" id="rsnap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Send the snapshot${g.snapshots > 1 ? 's' : ''} you took in the game (${g.snapshots}, newest ${ago(g.snapshot_at)}): Claude sees that moment and replays its frames on the PC</button>
+    <div style="height:10px"></div>` : '<p class="note" style="margin:0 0 10px">Tip: at the place, in the game, press View + Menu and then Y. That moment is saved as a snapshot, and the next report sends it: Claude sees what you saw and replays those frames on the PC.</p>'}
+    <button class="check f${g.snapshots ? '' : ' on'}" id="rcap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Take a screenshot on the Deck: the game opens, is captured and closes on its own</button>
     <div style="height:10px"></div>
     <button class="opt f" id="rsecs" data-hint="Change" onclick="reportSecs(1)"><span class="l">Screenshot at</span><span class="arr">◀</span><span class="v">${RSECS[st.secs]} s</span><span class="arr">▶</span></button>
     <div style="height:10px"></div>
@@ -1304,8 +1319,9 @@ async function sendReport(slug) {
   if (!chips.length && !l.report.text) { toast('Choose what you see or write a description', true); return; }
   const capture = $('#rcap', l.el).classList.contains('on');
   const saves = $('#rsave', l.el).classList.contains('on');
+  const snapshots = !!$('#rsnap', l.el) && $('#rsnap', l.el).classList.contains('on');
   try {
-    const j = await api('/api/remote/report/' + encodeURIComponent(slug), { body: { chips, text: l.report.text, capture, saves, seconds: RSECS[l.report.secs] } });
+    const j = await api('/api/remote/report/' + encodeURIComponent(slug), { body: { chips, text: l.report.text, capture, saves, snapshots, seconds: RSECS[l.report.secs] } });
     S.seen[j.id] = j.status;
     toast(capture ? 'Report sent: the game will open on the Deck for the screenshot and close on its own' : 'Report sent to Claude: follow it in Requests');
     closeAll();

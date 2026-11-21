@@ -93,7 +93,19 @@ for where, root in roots:
                         ach[cur] = int(line.split('=', 1)[1].strip() or 0)
             except (OSError, ValueError):
                 pass
-        games.append({'achievements': ach,'slug': n, 'where': where, 'path': d, 'size': du(d),
+        # Os snapshots de depuração que o jogador tirou no jogo (o Y no menu de definições do
+        # ReXNative): snapshots/<data-hora>/ com a imagem e o trace.
+        snaps = []
+        sdir = os.path.join(d, 'snapshots')
+        if os.path.isdir(sdir):
+            for sn in sorted(os.listdir(sdir))[-5:]:
+                sp = os.path.join(sdir, sn)
+                if os.path.isdir(sp):
+                    fs = os.listdir(sp)
+                    snaps.append({'name': sn, 'mtime': os.path.getmtime(sp),
+                                  'png': sum(f.endswith('.png') for f in fs),
+                                  'trace': sum(f.endswith('.rxt') for f in fs)})
+        games.append({'achievements': ach, 'snapshots': snaps,'slug': n, 'where': where, 'path': d, 'size': du(d),
                       'exe': exes[0] if exes else None, 'saves': saves, 'saves_size': saves_size,
                       'mtime': max([os.path.getmtime(os.path.join(d, e)) for e in exes] or [0]),
                       'complete': 'play.sh' in files, 'removed_mark': n in marks,
@@ -702,6 +714,34 @@ def fetch_saves(job, dk, g, dest):
     n = _tar_from_deck(job, dk, g['path'], have, dest, '', 'Copying the saves')
     job.event('ok', 'The saves from the Deck: %d entries, %.1f KB' % (n, os.path.getsize(dest) / 1e3))
     return dest
+
+
+def recent_snapshots(g, hours=24):
+    """Os snapshots do jogo no Deck das últimas `hours` horas (da listagem), o mais novo no fim."""
+    now = time.time()
+    return sorted((s for s in g.get('snapshots') or [] if now - (s.get('mtime') or 0) < hours * 3600),
+                  key=lambda s: s['name'])
+
+
+def fetch_snapshots(job, dk, g, dest, hours=24, limit=2):
+    """Os snapshots que o jogador tirou no jogo no Deck (View + Menu, depois Y): a imagem do frame e
+    o trace dos frames seguintes de cada um, os `limit` mais novos das últimas `hours` horas, para
+    dest/snapshots/<nome>/. Devolve as pastas."""
+    snaps = recent_snapshots(g, hours)[-limit:]
+    if not snaps:
+        return []
+    tar = os.path.join(dest, 'snapshots.tar')
+    _tar_from_deck(job, dk, g['path'], ['snapshots/' + s['name'] for s in snaps], tar, '',
+                   'Copying the snapshots')
+    try:
+        with tarfile.open(tar) as t:
+            t.extractall(dest, filter='data')
+    finally:
+        os.remove(tar)
+    out = [p for p in (os.path.join(dest, 'snapshots', s['name']) for s in snaps) if os.path.isdir(p)]
+    size = sum(os.path.getsize(os.path.join(p, f)) for p in out for f in os.listdir(p))
+    job.event('ok', 'The snapshots you took in the game: %d (%.0f MB)' % (len(out), size / 1e6))
+    return out
 
 
 def _tar_from_deck(job, dk, cwd, members, dest, options, what):

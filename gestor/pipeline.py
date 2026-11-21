@@ -15,6 +15,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 
 from . import catalog, claude, config, games, jobs, rexrepo, state, xna
@@ -364,7 +365,9 @@ def step_boot(job, ctx, attempt):
     from . import scenes
     want_scene = not _stock(work, name) and not (games.info(work).get('classic') or {}).get('pc') and \
         not any(m.get('source') == 'boot' and not m.get('stale') for m in scenes.scenes(ctx['slug']))
-    res = timed_run(job, ctx['slug'], run, name, 'native', boot=True, pair_classic=pair, record=want_scene)
+    quick = bool(ctx.get('quick')) and not want_scene and not pair
+    res = timed_run(job, ctx['slug'], run, name, 'native', boot=True, pair_classic=pair, record=want_scene,
+                    quick=quick)
     if res.get('scene_trace'):
         try:
             if res.get('running') and not res.get('crash') and not res.get('native_fault'):
@@ -390,6 +393,8 @@ def step_boot(job, ctx, attempt):
     if res['captures']:  # a última captura é a do teste (a que a app mostra)
         shot = os.path.join(config.data_dir('shots'), '%s.png' % ctx['slug'])
         shutil.copyfile(res['captures'][-1]['path'], shot)
+    elif quick:  # um arranque curto não tira capturas: a imagem do jogo fica a de antes
+        shot = (state.get('games', state.game_key(work), {}).get('boot') or {}).get('shot')
     res['shot'] = shot
     res['at'] = jobs.now()
     res['suspicious'] = suspicious(shot) if shot else None
@@ -543,7 +548,8 @@ def _control(run, line):
         f.write(line + '\n')
 
 
-def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False, record=False):
+def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False, record=False,
+              quick=False):
     """Arranca o jogo com live.ps1 (mode 'native' ou 'classic', o renderizador do ReXGlue) e
     tira capturas do próprio renderizador aos compare_times segundos (as mesmas nas duas
     execuções, para as comparar). boot: também vê se arranca (frames, crash) e pode esperar até
@@ -553,6 +559,8 @@ def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fal
     parse_log + running, seconds, log, captures."""
     cfg = config.load()
     times = sorted(int(t) for t in cfg.get('compare_times') or [15, 30, 45, 60])
+    if quick:  # quick: só se arranca (os testes de suspeitos), sem capturas, quick_boot_seconds
+        times = []
     extra = '--rexnative_capture_xenos=false'  # só a imagem do renderizador, nos dois modos
     if mode == 'classic':
         extra += ' --rexnative_classic=true'
@@ -586,7 +594,8 @@ def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fal
     pending = list(times)
     route = parse_route(cfg.get('compare_route') or '')
     control = os.path.join(run, 'live', 'control.txt')
-    end = max(times[-1] + 3, cfg['boot_seconds'] if boot else 0)
+    end = (float(cfg.get('quick_boot_seconds') or 20) if quick else
+           max(times[-1] + 3, cfg['boot_seconds'] if boot else 0))
     try:
         while True:
             soon = [x for x in ([pending[0]] if pending else []) + ([route[0][0]] if route else [])]
@@ -1042,7 +1051,7 @@ def selftest(job):
 
 
 # -- o pipeline --------------------------------------------------------------------------------
-def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True):
+def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True, quick=False):
     """source: um arquivo descarregado (jogo novo: prepare); work: um jogo já preparado (build).
     steps: os passos a correr (por omissão prepare+boot ou build+boot). fallback: o renderizador
     clássico quando o nativo não passa (não nos testes de suspeitos nem nos relatórios, onde
@@ -1058,7 +1067,7 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
         work = os.path.abspath(work)
         slug = os.path.basename(work)
         steps = steps or ['build'] + tests
-    ctx = {'source': source, 'work': work, 'slug': slug}
+    ctx = {'source': source, 'work': work, 'slug': slug, 'quick': quick}
     if (source and xna.is_xna_name(source)) or xna.is_xna_work(work):
         job.event('fail', xna.UNSUPPORTED_PT)
         state.update('games', state.game_key(work), {'pipeline': {'job': job.id, 'status': 'failed',
@@ -1249,12 +1258,13 @@ def keep_report_scenes(job, work, rep, report_id, summary):
     desenhado outra vez e comparado. Devolve os ids."""
     from . import scenes
     slug = rep.get('slug') or os.path.basename(work)
-    run_dir = os.path.normcase(os.path.abspath(os.path.join(work, 'run')))
+    roots = [os.path.normcase(os.path.abspath(d)) for d in (
+        os.path.join(work, 'run'), config.data_dir('reports'))]  # a snapshot's trace from the Deck
     kept = []
     for path in claude.parse_scenes(summary):
         p = os.path.abspath(path.strip().strip('`"'))
         if not p.lower().endswith('.rxt') or not os.path.isfile(p) or \
-                not os.path.normcase(p).startswith(run_dir):
+                not any(os.path.normcase(p).startswith(r) for r in roots):
             job.event('info', 'Scene of the report not kept (not a trace of this game): %s' % path[:200])
             continue
         label = 'Report: %s' % (rep.get('text') or '').split(';')[0][:80]
@@ -1368,13 +1378,89 @@ def auto_report_faults(job, work, slug, cmp):
 # -- testar vários jogos (os suspeitos de uma mudança) ----------------------------------------------
 
 
+class _Prebuild:
+    """Os jogos de um lote compilados um a seguir ao outro numa thread à parte: enquanto um jogo é
+    testado (a placa gráfica), o seguinte compila (o processador). Uma compilação que falha aqui volta
+    a correr no passo Build do jogo, com o registo e as tentativas de correção de sempre."""
+
+    def __init__(self, job, works):
+        self.job, self.works = job, list(works)
+        self.done = {}  # work -> (ok, segundos)
+        self.cv = threading.Condition()
+        self.proc = None
+        self.stopped = False
+        self.thread = threading.Thread(target=self._run, daemon=True)
+        self.thread.start()
+
+    def _run(self):
+        cfg = config.load()
+        cores = max(2, (os.cpu_count() or 4) - 4)  # o jogo que está a ser testado fica com alguns
+        for w in self.works:
+            if self.stopped or self.job._cancel.is_set():
+                break
+            log = os.path.join(config.data_dir('logs'), '%s-prebuild-%s.log' % (self.job.id, os.path.basename(w)))
+            cmd = _rex(cfg) + ['project', w, '--build', '--jobs', str(cores)]
+            t0 = time.time()
+            rc = -1
+            try:
+                with open(log, 'w', encoding='utf-8', errors='replace') as f:
+                    f.write('$ %s\n' % _cmdline(cmd))
+                    f.flush()
+                    p = subprocess.Popen(cmd, cwd=cfg['rexnative_dir'], env=config.tool_env(), stdout=f,
+                                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                         creationflags=jobs.CREATE_NO_WINDOW)
+                    with self.cv:
+                        self.proc = p
+                    rc = p.wait()
+            except OSError as e:
+                self.job.log('prebuild of %s: %s' % (w, e))
+            name = games.exe_name(w)
+            ok = rc == 0 and bool(name) and os.path.exists(os.path.join(w, 'run', name + '.exe'))
+            with self.cv:
+                self.proc = None
+                self.done[w] = (ok, time.time() - t0)
+                self.cv.notify_all()
+
+    def wait(self, w):
+        """(ok, segundos) da compilação deste jogo, quando acabar; None se não chegou a compilar."""
+        with self.cv:
+            while w not in self.done and self.thread.is_alive():
+                self.cv.wait(1.0)
+                if self.job._cancel.is_set():
+                    break
+            return self.done.get(w)
+
+    def close(self):
+        self.stopped = True
+        with self.cv:
+            p = self.proc
+        if p and p.poll() is None:
+            subprocess.run(['taskkill', '/PID', str(p.pid), '/T', '/F'], capture_output=True,
+                           creationflags=jobs.CREATE_NO_WINDOW)
+
+
 def batch_job(job, slugs, reason=''):
-    """Compila, testa e compara cada jogo, um de cada vez, e diz qual piorou (o arranque falhou,
-    ou a comparação passou a ver erros no nativo). Sem relatórios automáticos: o resultado vem no
-    fim, para decidir."""
+    """Compila, testa e compara cada jogo e diz qual piorou (o arranque falhou, ou uma cena de teste
+    ficou pior). O jogo seguinte compila enquanto um é testado, e o arranque é curto quando o jogo já
+    tem a cena do arranque (as cenas é que comparam a imagem). Sem relatórios automáticos: o
+    resultado vem no fim, para decidir."""
     if reason:
         job.event('info', reason)
     job.result['batch_child'] = True
+    if not job.result.get('synced'):  # antes de compilar: a cópia do ReXNative no main de agora
+        rexrepo.sync(job)
+        job.result['synced'] = True
+    works = [w for w in (games.find(s) for s in slugs) if w and not xna.is_xna_work(w)]
+    pre = _Prebuild(job, works) if works else None
+    try:
+        return _batch_rows(job, slugs, reason, pre)
+    finally:
+        if pre:
+            pre.close()
+
+
+def _batch_rows(job, slugs, reason, pre):
+    t_start = time.time()
     rows = []
     for slug in slugs:
         job.check()
@@ -1393,7 +1479,21 @@ def batch_job(job, slugs, reason=''):
             # frames que a referência, por isso uma diferença é da mudança. As capturas aos 15/30/45/60
             # s (intros, transições) já não decidem: um arranque mais lento dava "pior" sem nada pior.
             state.update('games', key, {'scenes_check': None})
-            run(job, work=w, steps=['build', 'boot', 'scenes'], auto_report=False, fallback=False)
+            steps = ['build', 'boot', 'scenes']
+            built = pre.wait(w) if pre else None
+            if built and built[0]:
+                job.event('ok', 'Build: built (beside the tests, %d s)' % built[1], game=slug)
+                steps = ['boot', 'scenes']
+            elif built:
+                job.event('info', 'The build beside the tests failed: building it again here', game=slug)
+            fixes_before = len(job.result.get('claude') or [])
+            run(job, work=w, steps=steps, auto_report=False, fallback=False, quick=True)
+            if pre and len(job.result.get('claude') or []) > fixes_before:
+                # Claude changed the code to get this game through: the games built beside the tests
+                # have the code from before, so the rest build here, one at a time.
+                pre.close()
+                pre = None
+                job.event('info', 'Claude changed the code: the next games build here, one at a time')
             g = state.get('games', key, {})
             boot_ok = (g.get('boot') or {}).get('ok') and not (g.get('boot') or {}).get('classic_fallback')
             sc = g.get('scenes_check') or {}
@@ -1415,8 +1515,9 @@ def batch_job(job, slugs, reason=''):
             rows.append((slug, title, 'failed: %s' % str(e)[:200], True))
             job.event('fail', '%s: failed: %s' % (title, str(e)[:300]), game=slug)
     bad = [r for r in rows if r[3]]
-    job.event('fail' if bad else 'ok', ('%d of %d got worse: %s' % (len(bad), len(rows), ', '.join(r[1] for r in bad)))
-              if bad else 'None of the %d games got worse' % len(rows))
+    took = ' (%d min)' % round((time.time() - t_start) / 60)
+    job.event('fail' if bad else 'ok', ('%d of %d got worse: %s%s' % (len(bad), len(rows), ', '.join(r[1] for r in bad), took))
+              if bad else 'None of the %d games got worse%s' % (len(rows), took))
     job.result['batch'] = [{'slug': r[0], 'title': r[1], 'result': r[2], 'worse': r[3]} for r in rows]
     if bad:
         raise RuntimeError('%d game(s) got worse: %s' % (len(bad), ', '.join(r[1] for r in bad)))

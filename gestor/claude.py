@@ -267,7 +267,7 @@ seconds. Aim for a fix checked on the PC within about {aim} minutes (the app sto
 game has a state folder of its own (REXNATIVE_LIVE_STATE is set for you): no other session's game
 is in your way, and you never stop someone else's.
 
-1. Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."`
+1. (A snapshot's trace from the player, above, comes first: play it.) Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."`
    (`pad:` presses the game's own pad, no window focus needed; `<s>:hold:ENTER:150` sends keys).
    With the player's save, Continue or Load, never a new game. Wait in short steps
    (`Start-Sleep 20`, then `live.ps1 frame <tag>` and look at the PNG), never minutes blind.
@@ -341,6 +341,36 @@ def parse_scenes(summary):
     return [m.group(1) for m in SCENE_LINE.finditer(summary or '')]
 
 
+def _snapshots_text(deck_snaps, run, name, hours=24):
+    """Os snapshots de depuração do jogador (o Y no menu de definições do ReXNative): os que vieram do
+    Deck com o relatório e os tirados neste PC nas últimas `hours` horas (run/snapshots)."""
+    import time
+    pc = []
+    root = os.path.join(run, 'snapshots')
+    if os.path.isdir(root):
+        for n in sorted(os.listdir(root))[-2:]:
+            d = os.path.join(root, n)
+            if os.path.isdir(d) and time.time() - os.path.getmtime(d) < hours * 3600:
+                fs = sorted(os.listdir(d))
+                pc.append({'name': n, 'png': [os.path.join(d, f) for f in fs if f.endswith('.png')],
+                           'trace': [os.path.join(d, f) for f in fs if f.endswith('.rxt')], 'where': 'this PC'})
+    snaps = [dict(s, where='the Steam Deck') for s in deck_snaps] + pc
+    if not snaps:
+        return ''
+    lines = ''.join('  %s, on %s%s: picture %s; trace %s\n' % (
+        s['name'], s['where'], (' (%s)' % s['info']) if s.get('info') else '',
+        ', '.join(s['png']) or 'none', ', '.join(s['trace']) or 'none') for s in snaps)
+    return ('The player took debug snapshots in the game AT THE PLACE (the settings menu, then Y): the picture '
+            'is the frame as it was shown (look at it: it is what the player saw) and the trace holds the next '
+            'frames, as the game handed them to the renderer, recorded by that machine\'s build of this same '
+            'executable. Play the trace FIRST, before reaching the place: `live.ps1 play "<trace>" -Dir "%s" '
+            '-Exe %s.exe`. Wrong here too: work on it, it is your fast loop (no game to reach); list it as a '
+            'SCENE. Right here while the picture is wrong: the fault is in what differs there (on the Deck: the '
+            'AMD GPU and its driver under Proton, the Deck\'s settings), not in the game\'s data. If `play` says '
+            'the trace does not fit this build (the PC build changed since), reach the place live.\n%s'
+            % (run, name, lines))
+
+
 def _scenes_text(slug, run, name):
     """As cenas de teste do jogo (traces gravados em sítios dele): tocam-se já, sem chegar lá."""
     from . import scenes
@@ -393,6 +423,7 @@ def investigate(job, work, report):
                      % (sv.get('run'), sv['files'],
                         "the PC's own saves from before are in %s" % sv['backup'] if sv.get('backup')
                         else 'the PC had no saves of its own'))
+    boot_txt += _snapshots_text(report.get('snapshots') or [], os.path.join(work, 'run'), name)
     deck_log = os.path.join(work, 'deck', 'try.log')
     if os.path.exists(deck_log):
         boot_txt += 'Last try on the Steam Deck: log %s (captures in %s)\n' % (
