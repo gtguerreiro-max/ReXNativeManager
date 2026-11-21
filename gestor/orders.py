@@ -57,6 +57,8 @@ def _progress(job, hooks):
         stage = job.result.get('stage')
         sub = hooks.manager.get(job.result.get('sub')) if job.result.get('sub') else None
         p = {'stage': stage, 'elapsed': time.time() - t0}
+        if sub is not None and sub.status == 'queued':
+            p['waiting'] = hooks.manager.waiting(sub)
         if sub is not None:
             sp = sub.progress() if callable(sub.progress) else sub.progress
             if isinstance(sp, dict):
@@ -73,6 +75,8 @@ def _progress(job, hooks):
                     p['phase'] = steps[-1]['text'][:140]
             # O plugin do Decky (1.0) mostra 'step': a fase com o passo.
             p['step'] = ' · '.join(x for x in (p.get('step_pt'), p.get('phase')) if x)[:160] or None
+            if p.get('waiting'):
+                p['step'] = 'Waiting for the PC to finish %s' % (p['waiting'].get('title') or 'another job')
         return p
     return f
 

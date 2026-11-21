@@ -167,6 +167,7 @@ async function openVersion() {
     ${v.restart.pending ? `<p class="chip info">Restarting when no job is running (${esc(v.restart.reason || '')})</p>` : ''}
     <h4>What changed</h4><div style="max-height:46vh;overflow:auto">${changesHtml(v.changes, v.running)}</div>
     <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">
+      <a class="small" href="/api/server/log" target="_blank" title="Errors and warnings the app wrote (logs/server.log)" style="margin-right:auto">Server log</a>
       <button class="b" id="vclose">Close</button>
       ${v.update_available ? '<button class="b p" id="vupd">Update from GitHub and restart</button>' : ''}
       ${v.restart_needed && !v.update_available ? '<button class="b p" id="vrst">Restart now (when idle)</button>' : ''}
@@ -865,7 +866,7 @@ function jobTable(list, back) {
     <tr><td><a href="#" onclick="openJob('${j.id}'${back ? `,'${esc(back)}'` : ''});return false">${esc(j.title)}</a>
       ${j.error ? `<div class="muted small">${esc(j.error.slice(0, 160))}</div>` : ''}
       ${j.result && j.result.claude && j.result.claude.length ? `<div class="small" style="color:#c9b6dd">${j.result.claude.length} fix(es) by Claude</div>` : ''}</td>
-    <td>${statusChip(j)} ${j.progress ? progressBar(j.progress) : ''}</td><td class="small">${when(j.started || j.created)}</td>
+    <td>${statusChip(j)} ${j.progress ? progressBar(j.progress) : ''}${waitLine(j.waiting || (j.progress || {}).waiting)}</td><td class="small">${when(j.started || j.created)}</td>
     <td class="small">${when(j.ended)}</td>
     <td>${j.status === 'running' || j.status === 'queued' ? `<button class="b s d" onclick="cancelJob('${j.id}')">Cancel</button>` : ''}</td></tr>`).join('')}</table>`;
 }
@@ -873,6 +874,14 @@ const JOB_STATUS = { queued: 'queued', running: 'running', ok: 'done', failed: '
 function statusChip(j) {
   const cls = { ok: 'ok', failed: 'bad', running: 'info', queued: 'warn', cancelled: '', interrupted: 'warn' }[j.status] || '';
   return `<span class="chip ${cls}">${esc(JOB_STATUS[j.status] || j.status_pt || j.status)}</span>`;
+}
+// A queued job (or a request whose job is queued): what runs before it in the same lane.
+function waitLine(w) {
+  if (!w) return '';
+  const n = w.ahead ? `${w.ahead} more job${w.ahead > 1 ? 's' : ''} before it` : '';
+  const t = w.title ? `waits for ${esc(w.title)}${w.for_s != null ? ' (running for ' + etaText(w.for_s) + ')' : ''}${n ? ', then ' + n : ''}`
+    : 'waits: ' + (n || 'another job runs');
+  return `<div class="small muted">${t}</div>`;
 }
 function etaText(s) {
   if (s == null || !isFinite(s)) return '';
@@ -972,7 +981,7 @@ async function tickJob() {
   const live = j.status === 'running' || j.status === 'queued';
   $('#dtitle').textContent = j.title;
   $('#jobhead').innerHTML = `${jobBack ? `<button class="b s" onclick="openGame('${esc(jobBack)}','tarefas')">← ${esc(jobBack)}</button>` : ''}
-    ${statusChip(j)} ${j.progress ? progressBar(j.progress) : ''}
+    ${statusChip(j)} ${j.progress ? progressBar(j.progress) : ''}${waitLine(j.waiting || (j.progress || {}).waiting)}
     <span class="muted small">${when(j.started || j.created)} → ${j.ended ? when(j.ended) : (live ? 'running' : '-')}</span><span class="grow"></span>
     ${live ? `<button class="b d" onclick="cancelJob('${j.id}')">Cancel</button>` : ''}
     ${j.game && j.game !== 'selftest' ? `<button class="b s" onclick="openGame('${esc(j.game)}')">Open the game</button>` : ''}`;
@@ -1634,7 +1643,7 @@ async function loadSdk(fetch) {
       ${x.notes && x.notes.length ? `<div class="muted" style="white-space:pre-wrap;max-height:110px;overflow:auto;margin:4px 0 8px">${esc(x.notes.join('\n'))}</div>` : ''}</div>` : '';
   $('#sdkpanel').innerHTML = `<div class="row"><span class="small">Installed <b>${esc(s.version || '?')}</b> · ${esc(s.describe || '')}
       · ${(s.ours || []).length} change(s) of ours on top of the official SDK
-      ${s.new_count ? ` · <span style="color:#f2c46b">${s.new_count} new official commit(s)</span>` : ' · nothing new in the official SDK'}</span>
+      ${s.new_count ? ` · <span style="color:#f2c46b">${s.new_count} new official commit(s)</span>` : ' · nothing new in the official SDK'}${!s.new_count && (s.release_marks || []).length ? ` <span class="small muted" title="${esc(s.release_marks.join('\n'))}">(${s.release_marks.length} release mark(s) that change no file)</span>` : ''}</span>
       <span class="grow"></span><button class="b" onclick="loadSdk(true)">Check now</button>
       ${s.new_count ? '<button class="b p" onclick="sdkUpdate()">Update and rebuild the SDK</button>' : ''}</div>
     ${(s.new || []).length ? `<div class="small muted" style="max-height:120px;overflow:auto;margin:6px 0">${s.new.map(esc).join('<br>')}</div>` : ''}

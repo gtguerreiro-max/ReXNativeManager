@@ -8,10 +8,21 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.13.0'
+VERSION = '1.14.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.14.0', '2026-11-21', [
+        'A request that waits says what for: builds and Claude fixes run one at a time on the PC, so a '
+        'report or install made while another one runs now shows "Waiting for the PC to finish Report: '
+        'The Bureau (running for 40 min)" in Deck mode (and "waits for ..." in Jobs on the PC), not '
+        '"Claude is investigating" while it is still in the queue.',
+        'The SDK no longer shows official commits as new when they change no file (the official '
+        '"Release vX" commits only mark a version): Update and rebuild the SDK appears only for real changes.',
+        'Server log: what the app writes to its console (errors, thread tracebacks, warnings) also goes '
+        'to logs/server.log, with the time; after a restart the app runs hidden, and errors were lost. '
+        'The version window links to it.',
+    ]),
     ('1.13.0', '2026-11-21', [
         'Test scenes, so "got worse" means it: a scene is a few frames of a game recorded as a ReXNative '
         'frame trace, with the pictures its build drew. After a ReXNative change the new build draws '

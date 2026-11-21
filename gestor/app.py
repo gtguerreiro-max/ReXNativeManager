@@ -1327,7 +1327,7 @@ def _orders_list(limit=40):
         d = j.to_dict(with_events=False)
         evs = [e for e in j.events if e['kind'] in ('ok', 'fail', 'info')]
         out.append({k: d.get(k) for k in ('id', 'title', 'status', 'status_pt', 'created', 'started',
-                                         'ended', 'error', 'progress', 'game')} |
+                                         'ended', 'error', 'progress', 'game', 'waiting')} |
                    {'stage': (d.get('result') or {}).get('stage'), 'slug': (d.get('result') or {}).get('slug'),
                     'key': (j.params or {}).get('key'), 'last': evs[-1]['text'] if evs else None,
                     'cover': (j.params or {}).get('title'), 'kind': j.kind,
@@ -1919,6 +1919,7 @@ def _deck_saves_to_pc(job, dk, g, w, slug, dest, rid):
 
 def deck_report_job(job, w, slug, body, rid):
     hooks = orders.Hooks
+    job.progress = orders._progress(job, hooks)  # a fase do Claude, ou o que a tarefa dele espera
     dest = config.data_dir('reports', rid)
     job.result.update(stage='deck', report=rid)
     dk = deck.Deck()
@@ -2201,6 +2202,15 @@ def version_restart():
     if r.get('refused'):
         raise HTTPException(409, 'Not restarted: %s' % r['refused'])
     return versions.status()
+
+
+@app.get('/api/server/log')
+def server_log(lines: int = 400):
+    """O fim do registo do servidor (erros, tracebacks dos fios, avisos): o que a app escreve no ecrã,
+    também quando corre escondida depois de reiniciar."""
+    p = os.path.join(config.data_dir(), 'logs', 'server.log')
+    text = jobs.tail(p, max(20, min(int(lines), 5000)))
+    return PlainTextResponse(text or '(nothing in the server log yet: it starts with version 1.14.0)')
 
 
 @app.get('/api/remote/version')

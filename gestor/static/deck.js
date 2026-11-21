@@ -1314,8 +1314,17 @@ function stageIndex(o) {
   const i = st.findIndex(s => s[0] === o.stage);
   return i < 0 ? 0 : i;
 }
+// What a queued job waits for: the job running before it on the PC (one build or Claude at a time).
+function waitText(w) {
+  if (!w) return '';
+  const n = w.ahead ? `${w.ahead} more request${w.ahead > 1 ? 's' : ''} before this one` : '';
+  if (!w.title) return 'Waiting: ' + (n || 'the PC is busy');
+  return `Waiting for the PC to finish ${w.title}${w.for_s != null ? ' (running for ' + eta(w.for_s) + ')' : ''}${n ? ', then ' + n : ''}`;
+}
 function stageText(o) {
   const p = o.progress || {};
+  if (p.waiting && o.status === 'running') return waitText(p.waiting);
+  if (o.status === 'queued' && o.waiting) return waitText(o.waiting);
   if (o.kind !== 'order' && o.kind !== 'deck-report') {
     const b = p.batch;
     if (b && o.status === 'running') {

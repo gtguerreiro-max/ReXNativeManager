@@ -80,6 +80,21 @@ def _releases():
     return out
 
 
+def _new_official():
+    """Os commits do oficial que ainda não temos, e se mudam alguma coisa: os "Release vX" do oficial
+    juntam o main à linha das publicações sem mudar nenhum ficheiro, e não são novidade para trazer."""
+    _, new, _ = _git(['log', '--format=%h %s', 'HEAD..origin/main'])
+    new = new.splitlines()
+    if not new:
+        return [], []
+    rc, base, _ = _git(['merge-base', 'HEAD', 'origin/main'])
+    if rc == 0 and base:
+        rc, _, _ = _git(['diff', '--quiet', base, 'origin/main'])
+        if rc == 0:  # a mesma árvore: só marcas de versão
+            return [], new
+    return new, []
+
+
 def status(fetch=False):
     src = source_dir()
     st = {'install': install_dir(), 'source': src, 'version': installed_version(),
@@ -89,9 +104,9 @@ def status(fetch=False):
             _git(['fetch', '-q', 'origin'], timeout=120)
         _, st['describe'], _ = _git(['describe', '--tags'])
         _, ours, _ = _git(['log', '--format=%h %s', 'origin/main..HEAD'])
-        _, new, _ = _git(['log', '--format=%h %s', 'HEAD..origin/main'])
+        new, marks = _new_official()
         _, dirty, _ = _git(['status', '--porcelain', '--untracked-files=no'])
-        st.update(ours=ours.splitlines(), new=new.splitlines()[:40], new_count=len(new.splitlines()),
+        st.update(ours=ours.splitlines(), new=new[:40], new_count=len(new), release_marks=marks[:10],
                   dirty=[l[3:] for l in dirty.splitlines() if l.strip()])
     st['releases'] = _releases()
     return st
@@ -130,15 +145,17 @@ def update_job(job):
     rc, _, err = _git(['fetch', 'origin'], timeout=300)
     if rc != 0:
         raise RuntimeError('git fetch failed: %s' % err[-200:])
-    _, new, _ = _git(['log', '--format=%h %s', 'HEAD..origin/main'])
-    if not new.strip():
-        job.event('ok', 'Nothing new in the official SDK: version %s stays' % before)
+    new, marks = _new_official()
+    if not new:
+        job.event('ok', 'Nothing new in the official SDK%s: version %s stays' % (
+            ' (only release marks that change no file: %s)' % ', '.join(m.split(' ', 1)[-1] for m in marks[:4])
+            if marks else '', before))
         return {'version': before, 'updated': False}
     backup = 'backup/sdk-%s' % time.strftime('%Y%m%d-%H%M%S')
     _git(['branch', backup, 'HEAD'])
     job.event('info', 'The SDK as it was is kept in the branch %s' % backup)
     job.event('step', 'Putting our %s change(s) on top of %d new official commit(s)' % (
-        len(_git(['log', '--format=%h', 'origin/main..HEAD'])[1].splitlines()), len(new.splitlines())))
+        len(_git(['log', '--format=%h', 'origin/main..HEAD'])[1].splitlines()), len(new)))
     rc, out, err = _git(['rebase', 'origin/main'], timeout=600)
     if rc != 0:
         _, conflicts, _ = _git(['diff', '--name-only', '--diff-filter=U'])

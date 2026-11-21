@@ -339,6 +339,11 @@ app restarts by itself once no job is running or queued (`POST /api/version/upda
 Deck mode shows the version in its status line, opens "What's new" once after the PC updated, and
 has "What's new" in the Exit menu.
 
+What the app writes to its console (errors, tracebacks of its threads, uvicorn's warnings) also
+goes to `data_dir/logs/server.log`, each line with its time; after a restart the app runs hidden,
+so this is where an error is seen. It starts over (the old one becomes `server.log.1`) when it
+passes 2 MB at a start. The version window links to it (**Server log**, `GET /api/server/log`).
+
 The Deck launcher (`gestor/deckkit/`, `deckapp.VERSION`) and the Decky plugin
 (`decky/package.json`) have their own versions: the app knows the launcher it installed and the
 plugin version the plugin reports when it asks (`/api/remote/home?plugin=`). A newer launcher shows
@@ -528,7 +533,7 @@ structures changed is marked "needs recording again".
 | `download_dir` (`~\ReXNativeManager\downloads`) | the downloaded archives, per item |
 | `work_dir` (`~\ReXNativeManager\work`) | the games prepared by the app |
 | `work_roots` | all the folders with games already prepared |
-| `data_dir` (`~\ReXNativeManager\data`) | `jobs.json`, `state.json`, `logs/` (one log per job and per step, and the Claude stream), `covers/`, `shots/`, `backups/` (Deck saves), `catalog/` (metadata cache) |
+| `data_dir` (`~\ReXNativeManager\data`) | `jobs.json`, `state.json`, `logs/` (one log per job and per step, the Claude stream, and `server.log`), `covers/`, `shots/`, `backups/` (Deck saves), `catalog/` (metadata cache) |
 
 The settings are kept in `config.json` next to the repository (outside git); the Settings page
 writes it.

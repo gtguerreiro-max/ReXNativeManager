@@ -30,6 +30,7 @@ class Cancelled(Exception):
 
 
 class Job:
+    manager = None  # o Manager da app (para dizer o que uma tarefa em fila espera)
     def __init__(self, kind, title, lane, fn=None, game=None, params=None):
         self.id = datetime.datetime.now().strftime('%Y%m%d-%H%M%S-') + secrets.token_hex(2)
         self.kind = kind
@@ -131,6 +132,8 @@ class Job:
         d['chat'] = self._say is not None  # o assistente está a trabalhar e lê o que se lhe escreve
         if with_events:
             d['events'] = self.events[-200:]
+        if progress and self.status == 'queued' and Job.manager is not None:
+            d['waiting'] = Job.manager.waiting(self)
         if progress and self.status == 'running' and callable(self.progress):
             try:
                 d['progress'] = self.progress()
@@ -157,6 +160,7 @@ class Manager:
     LANES = {'download': None, 'build': 1, 'deck': 1, 'quick': 3, 'orders': 6}
 
     def __init__(self):
+        Job.manager = self
         self.jobs = {}
         self.lock = threading.Lock()
         self.file_lock = threading.Lock()
@@ -262,6 +266,27 @@ class Manager:
         if game:
             items = [j for j in items if j.game == game]
         return items[:limit]
+
+    def waiting(self, j):
+        """Uma tarefa em fila: o que corre agora na sua pista (uma de cada vez nas compilações e no Deck)
+        e quantas estão à frente dela; None se não está à espera de nada."""
+        if j is None or j.status != 'queued':
+            return None
+        with self.lock:
+            same = [x for x in self.jobs.values() if x.lane == j.lane and x is not j]
+        running = sorted((x for x in same if x.status == 'running'), key=lambda x: x.started or '')
+        ahead = sum(1 for x in same if x.status == 'queued' and x.created <= j.created)
+        if not running and not ahead:
+            return None
+        out = {'lane': j.lane, 'ahead': ahead, 'running': len(running)}
+        if running:
+            r = running[0]
+            try:
+                secs = max(0, time.time() - datetime.datetime.fromisoformat(r.started).timestamp())
+            except (TypeError, ValueError):
+                secs = None
+            out.update(job=r.id, title=r.title, kind=r.kind, game=r.game, for_s=secs)
+        return out
 
     def active(self, kind=None, game=None):
         return [j for j in self.list(limit=1000) if j.status in ('queued', 'running') and
