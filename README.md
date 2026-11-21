@@ -207,6 +207,10 @@ The interface is a local page in English, at `http://127.0.0.1:8360/`.
 A shortcut in the Deck's Steam library, **Gestor ReXNative**, opens the app fullscreen in Game
 Mode (`/deck`), made for the 1280x800 screen and the controller: the D-pad and the stick move, A
 selects, B goes back, X searches, Y sorts, L1/R1 switch tabs, Menu exits. Touch works too.
+L2/R2 jump in the game grids: to the previous or the next letter in a list sorted by name (the
+letter shows in the middle of the screen; hold for letter after letter), three rows at a time in
+any other order. The app opens on the tab it was left on, and on every tab but Requests a strip
+under the top bar shows the request the PC is working on, its stage and its progress.
 
 - **On the Deck**: the installed games with their covers, the free space, "Update" when the PC
   has a newer build; on each game, update, the quick settings (renderer, upscaler, FPS limit) and
@@ -259,7 +263,9 @@ selects, B goes back, X searches, Y sorts, L1/R1 switch tabs, Menu exits. Touch 
   with the on-screen keyboard (a hint, what you saw, where to look) and the message reaches it in
   what it is doing. On the PC, the job view has the same box.
 - **Requests**: the stages of each one (Download, Build on PC, Send to Deck, Library) with the
-  progress, the speed and the time left; cancel and retry.
+  progress, the speed and the time left; cancel and retry. Under the title, what the PC is doing
+  now (the jobs running in the build lane and in the report lane, for how long, and how many
+  wait), so a request that waits says what for.
   Inside "Build on PC", the phases of the current step (`progress.py` reads the step's log):
   extracting, the game update and the DLC downloading (with %), each round of code generation,
   the game runs to find functions (N of 12), the build (file N of M, from ninja), the boot test

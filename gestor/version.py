@@ -8,10 +8,24 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.18.2'
+VERSION = '1.19.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.19.0', '2026-11-21', [
+        'Deck mode, L2 and R2 jump in the game grids: to the previous or the next letter in a list sorted '
+        'by name (the letter shows in the middle of the screen; hold the trigger for letter after letter), '
+        'and three rows at a time in any other order. With about 2000 games in the catalogue the D-pad alone '
+        'took minutes. On a keyboard: [ and ], or Home and End.',
+        'Deck mode shows the request in progress on every tab: a strip under the top bar with the game, the '
+        'stage and the progress (and how many more wait); touch it to open Requests.',
+        'Requests says what the PC is doing now: the jobs running in the build lane and in the report lane, '
+        'for how long, how many wait, and a pending restart. A request that waits shows what for.',
+        'Deck mode opens on the tab it was left on.',
+        'The top bar of Deck mode no longer breaks: the tabs stay on one line and the status gives way (a '
+        'warning in it pushed On Deck and On PC onto two lines); the warning that the PC cannot reach the '
+        'Deck is a short chip.',
+    ]),
     ('1.18.2', '2026-11-21', [
         'The Prepare step says where its time went: "prepared and built in 88 s (codegen 6 s in 4, build '
         '59 s in 2, game 3 s in 1)", the seconds and the number of codegen runs, builds and runs of the '

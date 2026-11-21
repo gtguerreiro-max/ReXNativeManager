@@ -25,19 +25,51 @@ img { -webkit-user-drag: none; }
 
 /* barra de cima */
 #top { height: 66px; display: flex; align-items: center; gap: 22px; padding: 0 26px; flex: none; }
-#brand { font-weight: 800; font-size: 19px; letter-spacing: .3px; white-space: nowrap; }
+#brand { font-weight: 800; font-size: 19px; letter-spacing: .3px; white-space: nowrap; flex: none; }
 #brand small { display: block; font-size: 11px; letter-spacing: 2.4px; color: var(--muted); font-weight: 600; }
 #brand b { color: var(--accent); }
-#tabs { display: flex; align-items: center; gap: 6px; margin: 0 auto; }
+/* the tabs never wrap or shrink: the status line gives way (it was the tabs that broke in two
+   lines when the status had a warning in it) */
+#tabs { display: flex; align-items: center; gap: 6px; margin: 0 auto; flex: none; }
 #tabs .tab { background: none; border: 0; padding: 9px 18px; border-radius: 999px; color: var(--muted);
-  font-weight: 600; font-size: 17px; position: relative; cursor: pointer; transition: color .15s, background .15s; }
+  font-weight: 600; font-size: 17px; position: relative; cursor: pointer; transition: color .15s, background .15s;
+  white-space: nowrap; }
 #tabs .tab.on { color: var(--text); background: #ffffff14; }
 #tabs .tab .n { position: absolute; top: 2px; right: 4px; min-width: 18px; height: 18px; padding: 0 5px;
   border-radius: 9px; background: var(--accent); color: #0b0e10; font-size: 11.5px; font-weight: 800;
   display: grid; place-items: center; }
 .glyph { display: inline-grid; place-items: center; min-width: 30px; height: 22px; padding: 0 6px; border-radius: 6px;
   background: #ffffff1c; color: var(--muted); font-size: 12px; font-weight: 800; letter-spacing: .3px; }
-#status { display: flex; gap: 10px; align-items: center; white-space: nowrap; font-size: 14px; color: var(--muted); }
+#status { display: flex; gap: 10px; align-items: center; white-space: nowrap; font-size: 14px; color: var(--muted);
+  min-width: 0; flex: 0 1 auto; overflow: hidden; }
+#status > span { flex: none; }
+#status > span.pcn { flex: 0 1 auto; min-width: 60px; overflow: hidden; text-overflow: ellipsis; }
+#status .chip { padding: 3px 9px; border-radius: 999px; background: #e8b04a26; color: var(--warn); font-weight: 700;
+  font-size: 12.5px; }
+
+/* the request the PC is working on, on every tab but Requests */
+#now { flex: none; margin: 0 26px 10px; padding: 9px 16px; border-radius: 12px; background: #151a1ed9;
+  border: 1px solid var(--line); display: flex; gap: 14px; align-items: center; font-size: 14.5px; cursor: pointer; }
+#now .pulse { width: 9px; height: 9px; border-radius: 50%; background: var(--accent); flex: none;
+  animation: pulse 1.6s ease-in-out infinite; }
+#now .pulse.q { background: var(--warn); animation: none; }
+#now .t { font-weight: 800; white-space: nowrap; max-width: 34%; overflow: hidden; text-overflow: ellipsis; }
+#now .s { color: var(--muted); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#now .pb { width: 190px; height: 6px; background: #ffffff14; border-radius: 3px; overflow: hidden; flex: none; }
+#now .pb span { display: block; height: 100%; background: var(--accent); transition: width .5s; }
+#now .more { color: var(--dim); white-space: nowrap; font-weight: 700; }
+@keyframes pulse { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: .35; transform: scale(.7); } }
+
+/* where a jump with L2 / R2 landed: the letter, or the position in the list */
+#jump { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 30; min-width: 150px;
+  height: 150px; padding: 0 34px; border-radius: 28px; background: #0b0e10e8; border: 2px solid var(--accent);
+  display: grid; place-items: center; font-size: 84px; font-weight: 900; pointer-events: none; opacity: 0;
+  transition: opacity .25s; box-shadow: 0 20px 60px #000c; }
+#jump.small { font-size: 34px; height: 96px; }
+#jump.on { opacity: 1; }
+/* what the PC is doing, under the title of Requests */
+.pcw { color: var(--muted); font-size: 14.5px; margin: -8px 4px 14px; display: flex; gap: 8px; align-items: center; }
+.pcw .dot { margin: 0; }
 .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); display: inline-block; margin-right: 6px; }
 .dot.ok { background: var(--accent); box-shadow: 0 0 8px var(--accent); } .dot.bad { background: var(--bad); }
 

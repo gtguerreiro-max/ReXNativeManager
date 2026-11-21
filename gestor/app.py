@@ -1417,6 +1417,23 @@ def _is_deck_client(request):
     return bool(client) and not lan.is_loopback(client)
 
 
+def _pc_work():
+    """What the PC is doing now, for Deck mode's Requests: the jobs running in the build lane and in
+    the report lane (title, kind, for how long), how many wait there, and a pending restart."""
+    import datetime
+    lanes = ('build', 'report')
+    js = [j for j in manager.list(limit=1000) if j.lane in lanes and j.status in ('running', 'queued')]
+    running = []
+    for j in sorted((j for j in js if j.status == 'running'), key=lambda x: x.started or ''):
+        try:
+            secs = max(0, time.time() - datetime.datetime.fromisoformat(j.started).timestamp())
+        except (TypeError, ValueError):
+            secs = None
+        running.append({'title': j.title, 'kind': j.kind, 'lane': j.lane, 'game': j.game, 'for_s': secs})
+    return {'running': running, 'queued': sum(1 for j in js if j.status == 'queued'),
+            'restart': bool(manager.draining)}
+
+
 @app.get('/api/remote/home')
 def remote_home(request: Request, refresh: bool = False, beat: bool = True, plugin: str = None):
     # beat: a página do Gestor (o plugin do menu rápido pergunta com beat=false: não é o Gestor
@@ -1447,6 +1464,7 @@ def remote_home(request: Request, refresh: bool = False, beat: bool = True, plug
                      'sd': d.get('sd'), 'playing': bool(playing),
                      'playing_title': d.get('playing_title') if playing else None},
             'games': [g for g in _deck_view(d) if not g['gestor']], 'orders': _orders_list(),
+            'pc_work': _pc_work(),
             'achievements_recent': _recent_achievements(),
             'pending': {'add': len(p['add']), 'remove': len(p['remove']),
                         'titles': [a['title'] for a in p['add'].values()]}}

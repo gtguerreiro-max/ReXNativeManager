@@ -187,8 +187,10 @@ function hints() {
   if (S.layers.length) parts.push(['b', 'Back']);
   if (a.x) parts.push(['x', a.x[0]]);
   if (a.y) parts.push(['y', a.y[0]]);
+  if (!S.layers.length && GRID_TABS.includes(S.tab) && $('.grid', $('#v-' + S.tab))) parts.push(['j', gridByName() ? 'Next letter' : 'Jump']);
   if (!S.layers.length) parts.push(['m', 'Exit']);
-  $('#hints').innerHTML = parts.map(([k, t]) => `<span><span class="k ${k}">${k === 'm' ? '☰' : k.toUpperCase()}</span>${esc(t)}</span>`).join('');
+  $('#hints').innerHTML = parts.map(([k, t]) => k === 'j' ? `<span><span class="glyph">L2</span><span class="glyph">R2</span>${esc(t)}</span>`
+    : `<span><span class="k ${k}">${k === 'm' ? '☰' : k.toUpperCase()}</span>${esc(t)}</span>`).join('');
 }
 
 // -- fundo -----------------------------------------------------------------------------------
@@ -218,13 +220,127 @@ function backdropNow(url) {
 
 // -- separadores ------------------------------------------------------------------------------
 const TABS = ['deck', 'pc', 'catalog', 'log', 'orders'];
+const TAB_KEY = 'gestor-tab';
 function switchTab(t) {
   if (S.layers.length || S.tab === 'pair') return;
   S.tab = t;
+  try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* no storage: it opens on the Deck tab */ }
   for (const v of TABS) $('#v-' + v).classList.toggle('hide', v !== t);
   $$('#tabs .tab').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   render(t);
+  nowStrip();
   restoreFocus();
+}
+// The tab the Manager was left on, when it opens again.
+function firstTab() {
+  let t = null;
+  try { t = localStorage.getItem(TAB_KEY); } catch (e) { /* */ }
+  if (TABS.includes(t)) return t;
+  return (S.home && (S.home.games || []).length) ? 'deck' : 'catalog';
+}
+
+// -- saltar nas grelhas (L2 / R2) ---------------------------------------------------------------
+// With 2000 games in the catalogue the D-pad alone takes minutes: L2 and R2 go to the previous and
+// the next letter in a list sorted by name, and three rows at a time in any other order.
+const GRID_TABS = ['deck', 'pc', 'catalog'];
+function gridByName() {
+  if (S.tab === 'catalog') return S.f.sort === 'name';
+  return (((S.tab === 'deck' ? S.dv : S.pv) || {}).sort || 'name') === 'name';
+}
+const letterOf = t => { const c = String(t || '').trim().charAt(0).toUpperCase(); return c >= 'A' && c <= 'Z' ? c : '#'; };
+let jumpTimer = null;
+function showJump(text) {
+  const el = $('#jump');
+  if (!el) return;
+  el.textContent = text;
+  el.classList.toggle('small', text.length > 2);
+  el.classList.add('on');
+  clearTimeout(jumpTimer);
+  jumpTimer = setTimeout(() => el.classList.remove('on'), 800);
+}
+function jumpGrid(dir) {
+  if (S.layers.length || !GRID_TABS.includes(S.tab)) return;
+  const grid = $('.grid', $('#v-' + S.tab));
+  if (!grid) return;
+  let tiles = $$('.tile', grid);
+  if (!tiles.length) return;
+  // The catalogue draws its tiles as you go down: its names come from the whole list, and its order
+  // by name is the order of each game's key (the title's words: "A Kingdom for Keflings" is under K).
+  const names = S.tab === 'catalog' ? filtered().map(g => g.key || g.title) : tiles.map(t => ($('.nm', t) || t).textContent);
+  let i = tiles.indexOf(S.cur);
+  if (i < 0) i = 0;
+  let j, label;
+  if (gridByName()) {
+    const k = letterOf(names[i]);
+    if (dir > 0) {
+      j = names.findIndex((n, x) => x > i && letterOf(n) !== k);
+      if (j < 0) j = names.length - 1;
+    } else {
+      // the first of this letter, or of the letter before when already on it
+      j = i;
+      while (j > 0 && letterOf(names[j - 1]) === k) j--;
+      if (j === i && i > 0) { const p = letterOf(names[i - 1]); j = i - 1; while (j > 0 && letterOf(names[j - 1]) === p) j--; }
+    }
+    label = letterOf(names[j]);
+  } else {
+    const cols = Math.max(1, tiles.filter(t => t.offsetTop === tiles[0].offsetTop).length);
+    j = Math.min(names.length - 1, Math.max(0, i + dir * cols * 3));
+    label = `${j + 1} / ${names.length}`;
+  }
+  if (S.tab === 'catalog' && j >= tiles.length) {
+    S.shown = Math.min(names.length, j + 60);
+    grid.insertAdjacentHTML('beforeend', filtered().slice(tiles.length, S.shown).map(catTile).join(''));
+    const note = grid.nextElementSibling;
+    if (note) note.textContent = S.shown < names.length ? `Showing ${S.shown} of ${names.length}: scroll down for more` : '';
+    tiles = $$('.tile', grid);
+  }
+  if (!tiles[j]) return;
+  // At once, with the tile near the top (what follows it is what was jumped to): the smooth scroll
+  // of one step is too slow over thousands of pixels.
+  focus(tiles[j], false);
+  const box = tiles[j].closest('.view');
+  if (box) {
+    const top = box.scrollTop + tiles[j].getBoundingClientRect().top - box.getBoundingClientRect().top - 24;
+    box.style.scrollBehavior = 'auto';
+    box.scrollTop = Math.max(0, top);
+    box.style.scrollBehavior = '';
+  }
+  showJump(label);
+}
+
+// -- o pedido em curso, em todos os separadores ---------------------------------------------------
+// The request the PC is working on (or the first one waiting), its stage and its progress, under
+// the top bar on every tab but Requests: no need to go there to see how it is going.
+function nowStrip() {
+  const el = $('#now');
+  if (!el) return;
+  const act = ((S.home || {}).orders || []).filter(o => o.status === 'running' || o.status === 'queued')
+    .sort((a, b) => (a.status === 'running' ? 0 : 1) - (b.status === 'running' ? 0 : 1) || String(a.created).localeCompare(String(b.created)));
+  if (!act.length || !S.online || S.tab === 'orders' || !TABS.includes(S.tab)) { el.classList.add('hide'); return; }
+  const o = act[0], p = o.progress || {};
+  const pc = p.total ? 100 * p.done / p.total : p.pct;
+  const waits = o.status === 'queued' || (p.waiting && o.status === 'running');
+  el.classList.remove('hide');
+  el.onclick = () => switchTab('orders');
+  el.innerHTML = `<span class="pulse ${waits ? 'q' : ''}"></span><span class="t">${esc(otitle(o))}</span><span class="s">${esc(stageText(o))}</span>
+    ${pc != null && o.status === 'running' && !waits ? `<span class="pb"><span style="width:${Math.max(0, Math.min(100, pc)).toFixed(1)}%"></span></span>` : ''}
+    ${act.length > 1 ? `<span class="more">+${act.length - 1} more</span>` : ''}`;
+}
+// What the PC is doing now (the build lane and the report lane), for the Requests tab: why a
+// request waits. From 1.19 (pc_work); nothing with an older app on the PC.
+function pcWorkText(h) {
+  const w = (h || {}).pc_work;
+  if (!w) return '';
+  const run = (w.running || []).map(r => `${r.title}${r.for_s != null ? ' (' + eta(r.for_s) + ')' : ''}`);
+  const parts = [run.length ? 'The PC is working on ' + run.join(' and ') : 'The PC is free'];
+  if (w.queued) parts.push(`${w.queued} job${w.queued > 1 ? 's' : ''} waiting`);
+  if (w.restart) parts.push('it restarts after the running jobs, the queue continues afterwards');
+  return parts.join(' · ');
+}
+function pcWork(h) {
+  const t = pcWorkText(h);
+  const busy = (((h || {}).pc_work || {}).running || []).length;
+  return t ? `<div class="pcw" id="pcw"><span class="dot ${busy ? 'ok' : ''}"></span><span>${esc(t)}</span></div>` : '';
 }
 function nextTab(d) { switchTab(TABS[(TABS.indexOf(S.tab) + d + TABS.length) % TABS.length]); }
 
@@ -301,9 +417,10 @@ function notifyOrders(prev, h) {
 function status() {
   const h = S.home || {};
   const sp = ((h.deck || {}).space || {}).interno;
-  $('#status').innerHTML = `<span><span class="dot ${S.online ? 'ok' : 'bad'}"></span>${S.online ? 'PC ' + esc(h.pc || '') : 'No connection to the PC'}</span>
-    ${S.online && h.ssh === false ? '<span style="color:var(--warn)">· the PC cannot reach the Deck (SSH): sending waits</span>' : ''}
-    ${sp ? `<span>· Deck: ${gb(sp.free)} free</span>` : ''}${h.version ? `<span>· v${esc(h.version)}</span>` : ''}`;
+  $('#status').innerHTML = `<span class="pcn"><span class="dot ${S.online ? 'ok' : 'bad'}"></span>${S.online ? 'PC ' + esc(h.pc || '') : 'No connection to the PC'}</span>
+    ${S.online && h.ssh === false ? '<span class="chip" title="The PC cannot reach the Deck (SSH): sending waits">Deck unreachable: sending waits</span>' : ''}
+    ${sp ? `<span>· ${gb(sp.free)} free</span>` : ''}${h.version ? `<span>· v${esc(h.version)}</span>` : ''}`;
+  nowStrip();
 }
 
 // -- versão --------------------------------------------------------------------------------------
@@ -1447,6 +1564,7 @@ function renderOrders() {
   const done = (h.orders || []).some(o => !['running', 'queued'].includes(o.status));
   v.innerHTML = `<div class="vhead"><div><h2>Requests</h2><div class="sub">From download to library: the PC does the work, you can keep using the Deck</div></div>
     ${done ? '<button class="btn f" data-hint="Clear" onclick="clearRequests()">Clear finished</button>' : ''}</div>
+    ${pcWork(h)}
     ${pendingBanner(h)}
     ${rows ? `<div class="orders">${rows}</div>` : '<div class="empty"><b>No requests</b>Choose a game in the Catalogue and press Install.</div>'}`;
 }
@@ -1473,6 +1591,8 @@ function orderLive(o) {
 // Só o progresso mudou: atualiza no sítio (sem redesenhar a lista, as capas e o foco).
 function updateOrders(h) {
   const v = $('#v-orders');
+  const w = $('#pcw span:last-child', v);
+  if (w) w.textContent = pcWorkText(h);
   for (const o of h.orders || []) {
     if (o.status !== 'running') continue;
     const box = $(`.order[data-order="${o.id}"] .live`, v);
@@ -1662,6 +1782,8 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key === 'Backspace') { back(); e.preventDefault(); return; }
   if (e.key === 'q' || e.key === 'PageUp') { nextTab(-1); return; }
   if (e.key === 'e' || e.key === 'PageDown') { nextTab(1); return; }
+  if (e.key === '[' || e.key === 'Home') { jumpGrid(-1); e.preventDefault(); return; }
+  if (e.key === ']' || e.key === 'End') { jumpGrid(1); e.preventDefault(); return; }
   if (e.key === 'x') { const a = actions().x; if (a) a[1](); return; }
   if (e.key === 'y') { const a = actions().y; if (a) a[1](); return; }
   if (e.key === 'm' || e.key === 'F10') { const a = actions().menu; if (a) a(); else openExit(); }
@@ -1681,6 +1803,8 @@ function press(b) {
     case 3: { const a = actions().y; if (a) a[1](); break; }
     case 4: nextTab(-1); break;
     case 5: nextTab(1); break;
+    case 6: jumpGrid(-1); break;
+    case 7: jumpGrid(1); break;
     case 9: { const a = actions().menu; if (a) a(); else openExit(); break; }
     case 12: move('up'); break;
     case 13: move('down'); break;
@@ -1707,6 +1831,7 @@ function padLoop(t) {
   for (let i = 0; i < 16; i++) {
     if (b[i] && !pad.prev[i]) { press(i); pad.held[i] = t + 380; pad.last = Date.now(); }
     else if (b[i] && i >= 12 && i <= 15 && t > pad.held[i]) { press(i); pad.held[i] = t + 85; }
+    else if (b[i] && (i === 6 || i === 7) && t > pad.held[i]) { press(i); pad.held[i] = t + 260; }  // held: letter after letter
   }
   pad.prev = b;
   requestAnimationFrame(padLoop);
@@ -1731,7 +1856,7 @@ async function boot() {
   setTimeout(() => loadLog(), 5000);  // quantas mudanças novas no ReXNative (no separador)
   setInterval(() => { if (S.tab !== 'log') loadLog(); }, 600000);
   setInterval(() => loadVersion(), 600000);
-  switchTab((S.home && (S.home.games || []).length) ? 'deck' : 'catalog');
+  switchTab(firstTab());
   requestAnimationFrame(padLoop);
   // Atualiza depressa com pedidos a decorrer, devagar sem eles; e diz ao PC que o Gestor está aberto.
   const tick = async () => {
