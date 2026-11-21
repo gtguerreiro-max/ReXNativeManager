@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import os
+import urllib.error
 import urllib.request
 
 import decky
@@ -52,6 +53,68 @@ def vkey(v):
         return tuple(int(x) for x in str(v).split('.'))
     except ValueError:
         return (0,)
+
+
+class PcError(ConnectionError):
+    """The PC app gave no usable answer, and why (the panel says it in words): 'unreachable' (the PC
+    is off or asleep, or the app is closed), 'unpaired' (it does not know this Deck's token),
+    'refused' (it does not accept the home network), 'login' (it waits for the GitHub sign-in),
+    'error' (it answered with something else)."""
+
+    def __init__(self, text, reason='unreachable'):
+        super().__init__(text)
+        self.reason = reason
+
+
+REASONS = {401: 'unpaired', 403: 'refused', 428: 'login'}
+
+
+def _detail(e):
+    """What the PC app said when it refused (the "detail" of its JSON, or its text)."""
+    try:
+        body = e.read().decode('utf-8', 'replace').strip()
+    except Exception:  # noqa: BLE001
+        body = ''
+    try:
+        body = str(json.loads(body).get('detail') or body)
+    except (ValueError, AttributeError):
+        pass
+    return (body or 'HTTP %s' % e.code)[:200]
+
+
+def _work(w):
+    """pc_work of /api/remote/home (the PC app from 1.19): the jobs building or investigating now, how
+    many wait and a pending restart. None with an older app, which does not send it."""
+    if not isinstance(w, dict):
+        return None
+    try:
+        running = [{k: r.get(k) for k in ('title', 'kind', 'lane', 'game', 'for_s')}
+                   for r in (w.get('running') or []) if isinstance(r, dict)]
+        return {'running': running[:4], 'queued': int(w.get('queued') or 0), 'restart': bool(w.get('restart'))}
+    except (TypeError, ValueError):
+        return None
+
+
+def _free(space, key):
+    """The bytes free on that storage of the Deck (None when the PC did not say)."""
+    v = space.get(key) if isinstance(space, dict) else None
+    return v.get('free') if isinstance(v, dict) else None
+
+
+ORDER_KEYS = ('id', 'title', 'name', 'status', 'stage', 'error', 'progress', 'created', 'started', 'ended',
+              'kind', 'last', 'report', 'waiting')
+
+
+def _orders(items, limit=12):
+    """The requests for the panel: every one in progress (the oldest first: it is the one the PC is
+    on), then the ones that ended last. By when they ended, not by when they were asked for: a long
+    build that ends after a dozen newer requests must still be seen ending, for its notice."""
+    items = [o for o in items or [] if isinstance(o, dict)]
+    live = [o for o in items if o.get('status') in ('running', 'queued')]
+    live.sort(key=lambda o: (o.get('status') != 'running', str(o.get('created') or '')))
+    done = [o for o in items if o.get('status') not in ('running', 'queued')]
+    done.sort(key=lambda o: str(o.get('ended') or o.get('created') or ''), reverse=True)
+    return [{k: o.get(k) for k in ORDER_KEYS} for o in live[:limit] + done[:limit]], len(live)
 
 
 # Instalar o ZIP pela Decky (o mesmo que "Instalar plugin a partir de um ZIP"): a API local da Decky,
@@ -107,7 +170,7 @@ class Plugin:
         if not token:
             raise LookupError('sem Gestor')
         order = ([self.good] if self.good in urls else []) + [u for u in urls if u != self.good]
-        err = None
+        err = refusal = None
         for u in order:
             headers = {'X-Gestor-Token': token}
             if method != 'GET':
@@ -121,26 +184,38 @@ class Plugin:
                     data = json.loads(r.read().decode('utf-8', 'replace'))
                 self.good = u
                 return data
+            except urllib.error.HTTPError as e:
+                # The PC app is there and refused: that says more than the address that did not
+                # answer. The next address may still be the one it accepts.
+                if refusal is None:
+                    refusal = PcError(_detail(e), REASONS.get(e.code, 'error'))
             except Exception as e:  # noqa: BLE001 - tenta o endereço seguinte
                 err = e
-        raise ConnectionError(str(err))
+        raise refusal or PcError(str(err) if err else 'no address of the PC')
 
     def _status(self):
         try:
             h = self._req('/api/remote/home?beat=false' + ('&plugin=' + VERSION if VERSION else ''))
         except LookupError:
-            return {'installed': False}
+            return {'installed': False, 'version': VERSION}
         except Exception as e:  # noqa: BLE001
-            return {'installed': True, 'online': False, 'error': str(e)[:200]}
-        sp = ((h.get('deck') or {}).get('space') or {}).get('interno') or {}
-        orders = [{k: o.get(k) for k in ('id', 'title', 'name', 'status', 'stage', 'error', 'progress', 'created',
-                                         'kind', 'last', 'report')}
-                  for o in (h.get('orders') or [])[:12]]
+            return {'installed': True, 'online': False, 'error': str(e)[:200], 'version': VERSION,
+                    'reason': getattr(e, 'reason', 'unreachable')}
+        if not isinstance(h, dict):
+            return {'installed': True, 'online': False, 'error': 'unexpected answer', 'version': VERSION,
+                    'reason': 'error'}
+        space = (h.get('deck') or {}).get('space')
+        orders, live = _orders(h.get('orders'))
         latest = h.get('plugin_latest')
         play = sorted((g for g in h.get('games') or [] if g.get('appid') and g.get('in_library') and g.get('complete', True)),
                       key=lambda g: -(g.get('last_played') or g.get('mtime') or 0))[:8]
-        return {'installed': True, 'online': True, 'pc': h.get('pc'), 'deck_free': sp.get('free'),
-                'orders': orders, 'pending': h.get('pending') or {}, 'gestor_appid': h.get('gestor_appid'),
+        # What an older app on the PC does not send (pc_work, ssh, the microSD) goes as None: the
+        # panel leaves that part out.
+        return {'installed': True, 'online': True, 'pc': h.get('pc'), 'app_version': h.get('version'),
+                'deck_free': _free(space, 'interno'), 'sd_free': _free(space, 'sd'),
+                'ssh': h.get('ssh'), 'pc_work': _work(h.get('pc_work')),
+                'orders': orders, 'active': live, 'pending': h.get('pending') or {},
+                'gestor_appid': h.get('gestor_appid'),
                 'version': VERSION, 'plugin_latest': latest, 'gestor_open': bool(h.get('gestor_open')),
                 'games': [{'title': g.get('title'), 'appid': g.get('appid'), 'last_played': g.get('last_played')}
                           for g in play],

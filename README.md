@@ -310,9 +310,14 @@ token of a paired device (HttpOnly cookie; the app stores only the SHA-256). The
 stays on 127.0.0.1 only. Another device (a phone) pairs with a 6-digit code the app shows for 5
 minutes; devices are revoked in Settings.
 
-**Decky plugin** (`decky/`): in the quick access menu (…) it shows the requests with their
-progress, notifies you when a game is ready (even while playing something else), opens the Manager
-and adds to the library what is waiting. It uses the Manager's token on the Deck.
+**Decky plugin** (`decky/`): in the quick access menu (…) it shows what the PC is doing (the job
+it is working on and for how long, how many wait, a pending restart), the requests with their
+stage, progress and time left (one that waits says what for; a failed one shows its reason; A opens
+the details), notifies you when a game is ready (even while playing something else), lists the
+games played last with a Play button (also with the PC off), opens the Manager and adds to the
+library what is waiting. When the PC does not answer it keeps the last state for a moment and then
+says why (PC off, Deck not paired, network refused, sign-in missing). It uses the Manager's token
+on the Deck.
 **Install or update it** with "Install the Decky plugin on the Deck" (PC app, Settings > Deck mode),
 "Install / Update the Decky plugin" (Deck mode, What's new) or, once installed, "Update the
 plugin" in its own panel when the PC has a newer one: the ZIP goes to

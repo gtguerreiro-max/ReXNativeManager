@@ -8,10 +8,28 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.20.0'
+VERSION = '1.20.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.20.1', '2026-11-21', [
+        'Decky plugin 1.8.0: the panel now starts with what the PC is doing (the job it is working on and '
+        'for how long, how many wait, a pending restart), and each request shows its stage, a progress bar '
+        'and the time left. A request that waits says what it is waiting for, and while Claude fixes a '
+        'failed step the panel says so instead of showing the command. A failed request shows in red with '
+        'its reason, and pressing A on any request opens its full details.',
+        'Decky plugin: when the PC does not answer, the panel keeps the last state for a moment and then '
+        'says why (PC off, Deck not paired, network refused, sign-in missing); the games played last keep '
+        'their Play buttons with the PC off, and the number of requests in progress shows beside the title '
+        'and as a dot on the plugin icon. It asks the PC less often: not every 3 seconds while the menu is '
+        'hidden, and once a minute while the PC does not answer. Update it from Deck mode (What is new) or '
+        'from the plugin panel.',
+        'What the PC is doing (Deck mode and the plugin) counts a download and a transfer to the Deck as '
+        'work: it said the PC was free during them.',
+        'The requests list of Deck mode always has every request in progress: one still running behind 40 '
+        'newer ones dropped out of it. A failed download says what the downloader said last, as plain text. '
+        'The strip of the request in progress also says "Claude is fixing" for a rebuild asked from the Deck.',
+    ]),
     ('1.20.0', '2026-11-21', [
         'New games are prepared in a lane of their own, beside the builds. A pipeline that starts from an '
         'archive (Prepare: extraction, code generation, the first builds, then its tests and any fixes) runs '

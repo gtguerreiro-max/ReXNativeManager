@@ -253,7 +253,8 @@ def _download_fn(item, name, then, f, dest):
                       dest, str(f['size']), f.get('md5') or ''], cwd=config.ROOT,
                      env=config.tool_env())
         if rc != 0:
-            raise RuntimeError('the download failed: %s' % jobs.tail(job.log_path, 3).splitlines()[-1:])
+            said = [l for l in jobs.tail(job.log_path, 6).splitlines() if l.strip() and not l.startswith('-> exit code')]
+            raise RuntimeError('the download failed: %s' % (said[-1].strip()[:300] if said else 'exit code %d' % rc))
         job.event('ok', 'Downloaded and verified (MD5)')
         if then == 'prepare':
             pj = _submit_pipeline(title, source=dest)
@@ -1355,10 +1356,14 @@ def _game_name(slug):
 
 
 def _orders_list(limit=40):
+    """The requests of Deck mode, the newest first: every one in progress, and the newest that ended
+    up to `limit` in all (a request still running behind 40 newer ones had dropped out of the list)."""
     out = []
-    for j in manager.list(limit=400):
-        if j.kind not in ('order', 'deck-report', 'deck-batch') and not (j.params or {}).get('from_deck'):
-            continue
+    mine = [j for j in manager.list(limit=1000)
+            if j.kind in ('order', 'deck-report', 'deck-batch') or (j.params or {}).get('from_deck')]
+    live = [j for j in mine if j.status in ('running', 'queued')]
+    done = [j for j in mine if j.status not in ('running', 'queued')][:max(0, limit - len(live))]
+    for j in sorted(live + done, key=lambda j: j.created, reverse=True):
         d = j.to_dict(with_events=False)
         evs = [e for e in j.events if e['kind'] in ('ok', 'fail', 'info')]
         out.append({k: d.get(k) for k in ('id', 'title', 'status', 'status_pt', 'created', 'started',
@@ -1370,8 +1375,6 @@ def _orders_list(limit=40):
                         _game_name(j.game or ((j.params or {}).get('slugs') or [None])[0])
                         if j.game or len((j.params or {}).get('slugs') or []) == 1 else d.get('title')),
                     'report': _report_brief((j.params or {}).get('report'))})
-        if len(out) >= limit:
-            break
     return out
 
 
@@ -1423,9 +1426,13 @@ def _pc_work():
     the report lane (title, kind, for how long), how many wait there, and a pending restart."""
     import datetime
     lanes = ('build', 'report', 'prepare')
-    js = [j for j in manager.list(limit=1000) if j.lane in lanes and j.status in ('running', 'queued')]
+    # A download or a transfer to the Deck in progress is work too (the PC is not "free"); what
+    # waits is counted in the lanes that build.
+    active = [j for j in manager.list(limit=1000) if j.status in ('running', 'queued')]
+    js = [j for j in active if j.lane in lanes]
+    busy = js + [j for j in active if j.lane in ('download', 'deck') and j.status == 'running']
     running = []
-    for j in sorted((j for j in js if j.status == 'running'), key=lambda x: x.started or ''):
+    for j in sorted((j for j in busy if j.status == 'running'), key=lambda x: x.started or ''):
         try:
             secs = max(0, time.time() - datetime.datetime.fromisoformat(j.started).timestamp())
         except (TypeError, ValueError):
