@@ -29,9 +29,29 @@ SAME_OVER = 0.05    # ...com menos desta percentagem de pixels a mais de 8 níve
 
 
 class SceneError(RuntimeError):
-    def __init__(self, msg, stale=False):
+    def __init__(self, msg, stale=False, crashed=False):
         super().__init__(msg)
         self.stale = stale  # o trace é de uma compilação com outras estruturas: gravar outra vez
+        self.crashed = crashed  # o jogo caiu a desenhá-la (o processo fica no tratador de crashes)
+
+
+# A crash (ReXGlue's crash report), or a fault the renderer caught: then the Xenos plugin draws for
+# the rest of the run, the trace is not played to its end and the game runs on by itself.
+CRASH_RE = re.compile(r'crash report, rexglue|EXCEPTION_|exception: [A-Z_]+ \(0x|'
+                      r'native path read a bad guest address|Xenos plugin draws (from the next Swap, )?for the rest',
+                      re.I)
+
+
+def broken_here(meta, work):
+    """A cena fez cair esta mesma compilação do ReXNative: não vale a pena desenhá-la outra vez até o
+    renderizador mudar (cada tentativa era um arranque e uma espera)."""
+    b = meta.get('broken') or {}
+    return bool(b) and b.get('rex') == build_rex(work)
+
+
+def _mark_broken(meta, work, why):
+    meta['broken'] = {'rex': build_rex(work), 'at': jobs.now(), 'why': str(why)[:400]}
+    save(meta)
 
 
 def root(slug):
@@ -171,16 +191,30 @@ def play(job, work, trace, out_dir, extra=()):
     p = subprocess.Popen(args, cwd=run, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
                          stderr=subprocess.DEVNULL)
     end = time.time() + PLAY_TIMEOUT
+    crash = None
     try:
+        n = 0
         while p.poll() is None:
             if job:
                 job.check()
             if time.time() > end:
                 raise SceneError('the scene did not finish in %d s' % PLAY_TIMEOUT)
             time.sleep(0.5)
+            n += 1
+            # A game that crashed stays in ReXGlue's crash handler and never exits: its log says so.
+            if n % 4 == 0:
+                text = _log_text(run, log_tag)
+                m = CRASH_RE.search(text)
+                if m:
+                    lines = [l.strip()[24:] for l in text[m.start():].splitlines()[:3]]
+                    crash = ' | '.join(l for l in lines if l)[:300]
+                    break
     finally:
         if p.poll() is None:
             p.kill()
+    if crash:
+        _drop_logs(run, log_tag)
+        raise SceneError('the game crashed while drawing the scene: %s' % crash, crashed=True)
     imgs = _pngs(out_dir)
     log = _log_text(run, log_tag)
     _drop_logs(run, log_tag)
@@ -216,7 +250,13 @@ def make_refs(job, work, slug, sid):
     meta = load(slug, sid)
     d = scene_dir(slug, sid)
     out = os.path.join(d, 'play')
-    imgs = play(job, work, os.path.join(d, 'scene.rxt'), out)
+    try:
+        imgs = play(job, work, os.path.join(d, 'scene.rxt'), out)
+    except SceneError as e:
+        if e.crashed:
+            _mark_broken(meta, work, e)
+        raise
+    meta.pop('broken', None)
     ref = os.path.join(d, 'ref')
     if os.path.isdir(ref):
         shutil.rmtree(ref)
@@ -230,7 +270,9 @@ def make_refs(job, work, slug, sid):
 
 
 def pending_refs(slug):
-    return [m for m in scenes(slug) if not m.get('frames') and not m.get('stale')]
+    work = games.find(slug)
+    return [m for m in scenes(slug) if not m.get('frames') and not m.get('stale')
+            and not (work and broken_here(m, work))]
 
 
 # -- comparar -------------------------------------------------------------------------------------
@@ -323,9 +365,12 @@ def check(job, work, slug, sid, judge=True):
         res.update(verdict='stale' if e.stale else 'failed', summary=str(e)[:400])
         if e.stale:
             meta['stale'] = True
+        if e.crashed:
+            meta['broken'] = {'rex': rex, 'at': jobs.now(), 'why': str(e)[:400]}
         meta['last'] = res
         save(meta)
         return res
+    meta.pop('broken', None)
     diffs = [diff(a, b) for a, b in zip(rimgs, nimgs)]
     res['frames'] = diffs
     if len(nimgs) != len(rimgs):
@@ -414,6 +459,10 @@ def check_all(job, work, slug, judge=True):
     out = {'checked': 0, 'worse': [], 'better': [], 'changed': [], 'results': []}
     for meta in scenes(slug):
         if meta.get('stale'):
+            continue
+        if broken_here(meta, work):
+            job.event('info', 'Scene "%s": skipped, it crashed this same build of ReXNative (%s); it is '
+                              'tried again after a renderer change' % (meta['label'], meta['broken']['why'][:160]))
             continue
         if not meta.get('frames'):
             try:

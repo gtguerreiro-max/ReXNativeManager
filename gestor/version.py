@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.20.1'
+VERSION = '1.20.2'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.20.2', '2026-11-21', [
+        'A test scene that makes the game crash no longer holds a batch for 4 minutes: the scene is played '
+        'while its log is read, and a crash (or a fault the renderer caught) ends it at once. Such a scene is '
+        'then skipped until the renderer changes. The boot scenes of Tetris Splash and Double Dragon Neon '
+        'crashed this way; ReXNative 4478eb3 fixes the cause (a played trace now reads the textures it did '
+        'not record), and both scenes play.',
+        'The app no longer locks itself after reopening when GitHub takes long to answer: a check of the '
+        'session that runs out of time uses the last session known, as without internet. It locked the whole '
+        'app until the next check, five minutes later.',
+    ]),
     ('1.20.1', '2026-11-21', [
         'Decky plugin 1.8.0: the panel now starts with what the PC is doing (the job it is working on and '
         'for how long, how many wait, a pending restart), and each request shows its stage, a progress bar '

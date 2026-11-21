@@ -63,7 +63,12 @@ def status(refresh=False):
                     if last.get('login'):
                         out.update(logged_in=True, offline=True, **{k: last.get(k) for k in ('login', 'id', 'name', 'can_push')})
         except (OSError, subprocess.SubprocessError):
-            pass
+            # gh did not answer in time (the PC busy, as right after the app reopens): the last
+            # session known, as without internet. Taken as signed out, the whole app stayed closed
+            # until the next check, five minutes later.
+            last = state.get('github', 'user') or {}
+            if last.get('login'):
+                out.update(logged_in=True, offline=True, **{k: last.get(k) for k in ('login', 'id', 'name', 'can_push')})
     _status.update(at=time.time(), data=out)
     if out['logged_in']:
         state.update('github', 'user', {k: out[k] for k in ('login', 'id', 'name', 'can_push')})
