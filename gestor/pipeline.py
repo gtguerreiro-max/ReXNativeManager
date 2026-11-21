@@ -548,8 +548,65 @@ def _control(run, line):
         f.write(line + '\n')
 
 
+# One game at a time on the test bench (live.ps1's default state keeps one game): the build lane's
+# boot tests and the report lane's, which run side by side.
+_BENCH = threading.Lock()
+_turns = threading.local()
+
+
+class game_turn:
+    """One job at a time builds or tests a game (Manager.game_lock): a report in its lane waits for
+    a pipeline or a suspects batch that has the game, and the other way round. Re-entrant in a
+    thread (a report holds its game while it runs the pipeline on it)."""
+
+    def __init__(self, job, slug):
+        self.job, self.slug, self.lock = job, slug, None
+
+    def __enter__(self):
+        held = getattr(_turns, 'slugs', None)
+        if held is None:
+            held = _turns.slugs = set()
+        m = jobs.Job.manager
+        if m is None or not self.slug or self.slug in held:
+            return self
+        lock = m.game_lock(self.slug)
+        said = False
+        while not lock.acquire(timeout=2):
+            if not said:
+                self.job.event('info', 'Another job is working on %s: waiting for it' % self.slug)
+                said = True
+            self.job.check()
+        self.lock = lock
+        held.add(self.slug)
+        return self
+
+    def __exit__(self, *exc):
+        if self.lock is not None:
+            _turns.slugs.discard(self.slug)
+            self.lock.release()
+
+
 def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False, record=False,
               quick=False):
+    """One game at a time (_BENCH), then _timed_run."""
+    said = False
+    while not _BENCH.acquire(timeout=2):
+        if not said:
+            job.event('info', 'The other lane is testing a game: waiting for it')
+            said = True
+        job.check()
+    try:
+        if said and not wait_live_free(job):
+            return {'start_error': 'the PC is still testing another game', 'captures': [], 'log': None,
+                    'running': False, 'frames': 0}
+        return _timed_run(job, slug, run, name, mode, boot=boot, flags=flags, pair_classic=pair_classic,
+                          record=record, quick=quick)
+    finally:
+        _BENCH.release()
+
+
+def _timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False, record=False,
+               quick=False):
     """Arranca o jogo com live.ps1 (mode 'native' ou 'classic', o renderizador do ReXGlue) e
     tira capturas do próprio renderizador aos compare_times segundos (as mesmas nas duas
     execuções, para as comparar). boot: também vê se arranca (frames, crash) e pode esperar até
@@ -968,6 +1025,12 @@ def step_deckpc(job, ctx, attempt):
     return True, {'summary': text}
 
 
+def report_lane():
+    """Where a report runs: its own lane, with its own copy of ReXNative (rexrepo.report_dir), or
+    the build lane when that is turned off."""
+    return 'report' if rexrepo.report_dir() else 'build'
+
+
 def _auto_report(job, work, slug, label, kind_where, text, caps, said):
     """Guarda um relatório automático e põe na fila a tarefa que o manda ao Claude (modelo forte).
     label: o que vai no título da tarefa; kind_where: (tipo, onde); said: o aviso na tarefa atual."""
@@ -980,7 +1043,7 @@ def _auto_report(job, work, slug, label, kind_where, text, caps, said):
         return rid
     title = games.info(work)['title']
     j2 = SUBMIT('report', 'Automatic report%s: %s' % (label, title), lambda j: report_job(j, work, rid),
-                'build', slug, {'report': rid, 'auto': True})
+                report_lane(), slug, {'report': rid, 'auto': True})
     state.update('reports', rid, {'job': j2.id})
     job.event('info', said, job=j2.id)
     return rid
@@ -1067,6 +1130,11 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
         work = os.path.abspath(work)
         slug = os.path.basename(work)
         steps = steps or ['build'] + tests
+    with game_turn(job, slug):
+        return _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg)
+
+
+def _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg):
     ctx = {'source': source, 'work': work, 'slug': slug, 'quick': quick}
     if (source and xna.is_xna_name(source)) or xna.is_xna_work(work):
         job.event('fail', xna.UNSUPPORTED_PT)
@@ -1201,7 +1269,24 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
 # -- relatórios do utilizador ----------------------------------------------------------------------
 def report_job(job, work, report_id):
     """O Claude (modelo forte) investiga o relatório; se mudou alguma coisa, o jogo é compilado e
-    testado outra vez (com o ciclo de correção, se a compilação falhar)."""
+    testado outra vez (com o ciclo de correção, se a compilação falhar). Na pista dos relatórios
+    (lane 'report') tudo isto corre na cópia do ReXNative dos relatórios, com o seu jogo ao vivo, ao
+    lado do que a pista das compilações estiver a fazer; o jogo é só desta tarefa enquanto dura."""
+    slug = (state.get('reports', report_id) or {}).get('slug') or os.path.basename(work)
+    if job.lane != 'report':
+        with game_turn(job, slug):
+            return _report_job(job, work, report_id)
+    try:
+        d = rexrepo.ensure_report_dir()
+    except Exception as e:
+        state.update('reports', report_id, {'status': 'failed'})
+        raise RuntimeError(str(e))
+    with config.override(rexnative_dir=d, claude_live_state='rexnative-live-manager-reports'):
+        with game_turn(job, slug):
+            return _report_job(job, work, report_id)
+
+
+def _report_job(job, work, report_id):
     rep = state.get('reports', report_id) or {}
     state.update('reports', report_id, {'status': 'investigating', 'job': job.id})
     rexrepo.sync(job)
@@ -1389,37 +1474,53 @@ class _Prebuild:
         self.cv = threading.Condition()
         self.proc = None
         self.stopped = False
+        self.rex = config.load()['rexnative_dir']  # the lane's copy (this thread has no override)
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
 
     def _run(self):
+        with config.override(rexnative_dir=self.rex):
+            for w in self.works:
+                if self.stopped or self.job._cancel.is_set():
+                    break
+                # The game's turn: a report in its lane may be building this game right now.
+                lock = jobs.Job.manager.game_lock(os.path.basename(w)) if jobs.Job.manager else None
+                while lock is not None and not lock.acquire(timeout=2):
+                    if self.stopped or self.job._cancel.is_set():
+                        return
+                try:
+                    if self.stopped or self.job._cancel.is_set():
+                        break
+                    self._build(w)
+                finally:
+                    if lock is not None:
+                        lock.release()
+
+    def _build(self, w):
         cfg = config.load()
         cores = max(2, (os.cpu_count() or 4) - 4)  # o jogo que está a ser testado fica com alguns
-        for w in self.works:
-            if self.stopped or self.job._cancel.is_set():
-                break
-            log = os.path.join(config.data_dir('logs'), '%s-prebuild-%s.log' % (self.job.id, os.path.basename(w)))
-            cmd = _rex(cfg) + ['project', w, '--build', '--jobs', str(cores)]
-            t0 = time.time()
-            rc = -1
-            try:
-                with open(log, 'w', encoding='utf-8', errors='replace') as f:
-                    f.write('$ %s\n' % _cmdline(cmd))
-                    f.flush()
-                    p = subprocess.Popen(cmd, cwd=cfg['rexnative_dir'], env=config.tool_env(), stdout=f,
-                                         stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
-                                         creationflags=jobs.CREATE_NO_WINDOW)
-                    with self.cv:
-                        self.proc = p
-                    rc = p.wait()
-            except OSError as e:
-                self.job.log('prebuild of %s: %s' % (w, e))
-            name = games.exe_name(w)
-            ok = rc == 0 and bool(name) and os.path.exists(os.path.join(w, 'run', name + '.exe'))
-            with self.cv:
-                self.proc = None
-                self.done[w] = (ok, time.time() - t0)
-                self.cv.notify_all()
+        log = os.path.join(config.data_dir('logs'), '%s-prebuild-%s.log' % (self.job.id, os.path.basename(w)))
+        cmd = _rex(cfg) + ['project', w, '--build', '--jobs', str(cores)]
+        t0 = time.time()
+        rc = -1
+        try:
+            with open(log, 'w', encoding='utf-8', errors='replace') as f:
+                f.write('$ %s\n' % _cmdline(cmd))
+                f.flush()
+                p = subprocess.Popen(cmd, cwd=cfg['rexnative_dir'], env=config.tool_env(), stdout=f,
+                                     stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
+                                     creationflags=jobs.CREATE_NO_WINDOW)
+                with self.cv:
+                    self.proc = p
+                rc = p.wait()
+        except OSError as e:
+            self.job.log('prebuild of %s: %s' % (w, e))
+        name = games.exe_name(w)
+        ok = rc == 0 and bool(name) and os.path.exists(os.path.join(w, 'run', name + '.exe'))
+        with self.cv:
+            self.proc = None
+            self.done[w] = (ok, time.time() - t0)
+            self.cv.notify_all()
 
     def wait(self, w):
         """(ok, segundos) da compilação deste jogo, quando acabar; None se não chegou a compilar."""

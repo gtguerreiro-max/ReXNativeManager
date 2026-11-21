@@ -42,6 +42,11 @@ def _follow(job, sub, stage, hooks):
         if job._cancel.is_set():
             hooks.manager.cancel(sub.id)
             raise jobs.Cancelled()
+        # The app is about to restart and the job this one follows waits for after it: so does
+        # this one (it starts again from what is already done).
+        m = hooks.manager
+        if m.draining and sub.status == 'queued' and m.resumable(sub) and m.resumable(job):
+            raise jobs.Requeue()
         time.sleep(1.5)
     if sub.status != 'ok':
         raise RuntimeError('%s: %s' % (STAGE_PT[stage], sub.error or sub.status))

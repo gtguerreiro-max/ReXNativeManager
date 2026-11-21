@@ -587,9 +587,11 @@ def install_job(job, work, root=None, steam=True, try_seconds=None, force_settin
         job.event('info', 'The Deck is asleep or offline: the transfer starts when it is back (waiting up '
                           'to %g h)' % hours)
         until = time.time() + hours * 3600
+        job.drain_stop = True  # only waiting: a restart of the app does not wait for this
         while not ok and time.time() < until:
             job.sleep(60)
             ok, err, line = dk.check()
+        job.drain_stop = False
     if not ok:
         raise RuntimeError('The Deck is not responding (%s)' % err)
     if wait_foreign(job):
@@ -602,7 +604,9 @@ def install_job(job, work, root=None, steam=True, try_seconds=None, force_settin
         if not said:
             job.event('info', 'You are playing on the Deck: the transfer starts when you quit the game')
             said = True
+        job.drain_stop = True
         job.sleep(60)
+        job.drain_stop = False
         b = busy(dk)
     defer = bool(steam and b)
     if defer:

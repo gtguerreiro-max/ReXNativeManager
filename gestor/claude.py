@@ -130,7 +130,10 @@ def live_state_dir():
     """A pasta de estado do live.ps1 das sessões do assistente desta app: o jogo ao vivo delas é só
     delas (outras sessões no PC usam a de origem, %LOCALAPPDATA%\\rexnative-live) e nenhuma pára o
     da outra."""
-    return os.path.join(os.environ.get('LOCALAPPDATA', ''), 'rexnative-live-manager')
+    # The report lane keeps its own (config.override in pipeline.report_job): a report's live game
+    # and the one of a fix in the build lane run side by side.
+    return os.path.join(os.environ.get('LOCALAPPDATA', ''),
+                        config.get('claude_live_state') or 'rexnative-live-manager')
 
 
 def _env():

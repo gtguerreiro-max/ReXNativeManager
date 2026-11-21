@@ -1371,6 +1371,7 @@ function stageIndex(o) {
 // What a queued job waits for: the job running before it on the PC (one build or Claude at a time).
 function waitText(w) {
   if (!w) return '';
+  if (w.restart) return 'Continues when the Manager on the PC has restarted';
   const n = w.ahead ? `${w.ahead} more request${w.ahead > 1 ? 's' : ''} before this one` : '';
   if (!w.title) return 'Waiting: ' + (n || 'the PC is busy');
   return `Waiting for the PC to finish ${w.title}${w.for_s != null ? ' (running for ' + eta(w.for_s) + ')' : ''}${n ? ', then ' + n : ''}`;

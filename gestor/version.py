@@ -8,10 +8,31 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.17.3'
+VERSION = '1.18.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.18.0', '2026-11-21', [
+        'The app restarts between jobs, and the queue comes back. A restart (after an update, or Restart) '
+        'now waits only for the jobs that are running: the queued ones stay queued and continue when the app '
+        'is back, in the same order. Before, it waited for the whole queue to empty, which took hours with '
+        'requests coming in (one restart waited from 17:04 into the night). Requests from the Deck, a '
+        'download and a transfer that waits for a sleeping Deck do not hold a restart either: they give '
+        'their turn back and pick up where they were. Closing the app with jobs queued no longer loses '
+        'them: they are back in the queue the next time it opens (the job that was running is marked '
+        'interrupted, as before).',
+        'Reports have a lane of their own. Claude investigates a report beside whatever the build lane is '
+        'doing, in a second copy of ReXNative that only reports use (made the first time, next to the '
+        'other one, named ...-reports), with its own live game. Before, a report waited behind every '
+        'pipeline and every other job (up to 62 minutes, measured), and a long report held every build '
+        '(44 minutes). One job at a time still works on a given game, the test bench still runs one game at '
+        'a time, and an SDK update waits for the report lane and keeps it closed. A fix that could not be '
+        'published (someone who cannot push to ReXNative) is brought from one copy to the other before the '
+        'next job, so both lanes build the same code. Settings: report_lane (off puts reports back in the '
+        'build lane).',
+        'scripts/test_jobs.py tests the queue with made-up jobs (lanes, restart, the queue after it, one '
+        'job per game).',
+    ]),
     ('1.17.3', '2026-11-21', [
         'Clear the job list: in Jobs, Clear failed (failed, cancelled and interrupted jobs) and Clear finished '
         '(every finished job); in Deck mode, Clear finished in Requests. Queued and running jobs stay, and the '

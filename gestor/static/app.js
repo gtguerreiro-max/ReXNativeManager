@@ -135,7 +135,7 @@ async function versionCheck(fetch) {
   try { ver = await api('/api/version' + (fetch ? '?fetch=true' : '')); } catch (e) { return; }
   const el = $('#ver');
   const next = ver.restart_needed ? ver.disk : ver.update_available ? ver.remote : null;
-  el.textContent = 'v' + ver.running + (ver.restart.pending ? ' · restarting when the jobs finish' : next ? ' · v' + next + ' available' : '');
+  el.textContent = 'v' + ver.running + (ver.restart.pending ? ' · restarting when the running jobs finish' : next ? ' · v' + next + ' available' : '');
   el.className = 'chip ' + (ver.restart.pending ? 'info' : next ? 'warn' : '');
   let seen = null;
   try { seen = localStorage.getItem('gestor-seen-version'); } catch (e) { /* */ }
@@ -164,18 +164,19 @@ async function openVersion() {
   const d = $('#dlg');
   $('#dlgbody').innerHTML = `<h3 style="margin-top:0">ReXNative Manager v${esc(v.running)}</h3>
     ${lines.map(l => `<p class="small" style="margin:4px 0">${l}</p>`).join('')}
-    ${v.restart.pending ? `<p class="chip info">Restarting when no job is running (${esc(v.restart.reason || '')})</p>` : ''}
+    ${v.restart.pending ? `<p class="chip info">Restarting when the running jobs finish (${esc(v.restart.reason || '')})</p>
+      <p class="small muted">${(v.restart.waits_for || []).length ? 'Waiting for: ' + esc(v.restart.waits_for.join(', ')) + '. ' : ''}${v.restart.later ? esc(String(v.restart.later)) + ' queued job(s) continue after the restart.' : ''}</p>` : ''}
     <h4>What changed</h4><div style="max-height:46vh;overflow:auto">${changesHtml(v.changes, v.running)}</div>
     <div class="row" style="justify-content:flex-end;gap:8px;margin-top:12px">
       <a class="small" href="/api/server/log" target="_blank" title="Errors and warnings the app wrote (logs/server.log)" style="margin-right:auto">Server log</a>
       <button class="b" id="vclose">Close</button>
       ${v.update_available ? '<button class="b p" id="vupd">Update from GitHub and restart</button>' : ''}
-      ${v.restart_needed && !v.update_available ? '<button class="b p" id="vrst">Restart now (when idle)</button>' : ''}
+      ${v.restart_needed && !v.update_available ? '<button class="b p" id="vrst">Restart (after the running jobs)</button>' : ''}
     </div>`;
   d.showModal();
   $('#vclose').onclick = () => d.close();
-  if ($('#vupd')) $('#vupd').onclick = async () => { try { const r = await api('/api/version/update', { body: {} }); toast(r.message + (r.restart.pending ? ': restarting when no job is running' : '')); } catch (e) { fail(e); } d.close(); versionCheck(); };
-  if ($('#vrst')) $('#vrst').onclick = async () => { try { await api('/api/version/restart', { body: {} }); toast('Restarting when no job is running'); } catch (e) { fail(e); } d.close(); versionCheck(); };
+  if ($('#vupd')) $('#vupd').onclick = async () => { try { const r = await api('/api/version/update', { body: {} }); toast(r.message + (r.restart.pending ? ': restarting when the running jobs finish' : '')); } catch (e) { fail(e); } d.close(); versionCheck(); };
+  if ($('#vrst')) $('#vrst').onclick = async () => { try { await api('/api/version/restart', { body: {} }); toast('Restarting when the running jobs finish; queued jobs continue afterwards'); } catch (e) { fail(e); } d.close(); versionCheck(); };
 }
 versionCheck();
 setInterval(() => versionCheck(), 60000);
@@ -905,6 +906,7 @@ function statusChip(j) {
 // A queued job (or a request whose job is queued): what runs before it in the same lane.
 function waitLine(w) {
   if (!w) return '';
+  if (w.restart) return '<div class="small muted">continues after the app restarts</div>';
   const n = w.ahead ? `${w.ahead} more job${w.ahead > 1 ? 's' : ''} before it` : '';
   const t = w.title ? `waits for ${esc(w.title)}${w.for_s != null ? ' (running for ' + etaText(w.for_s) + ')' : ''}${n ? ', then ' + n : ''}`
     : 'waits: ' + (n || 'another job runs');
@@ -1524,6 +1526,8 @@ const SETTINGS = [
     ['max_downloads', 'Simultaneous downloads (restart the app)', 'int']]],
   ['ReXNative', [
     ['rexnative_dir', 'ReXNative copy to build with (worktree)'], ['python', 'Python (empty: the one the app uses)'],
+    ['report_lane', 'Reports run beside the builds, in a ReXNative copy of their own', 'bool'],
+    ['report_rexnative_dir', 'ReXNative copy for reports (empty: the one above with -reports)'],
     ['env', 'Environment variables (NAME=value, one per line)', 'env'],
     ['prepare_args', 'Prepare options', 'args'],
     ['boot_seconds', 'Boot test: seconds', 'int'], ['boot_seconds_max', 'Boot test: maximum without stats', 'int'],

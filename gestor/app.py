@@ -187,17 +187,21 @@ def get_item(item: str):
 
 def _submit_pipeline(title, source=None, work=None, steps=None, after_deck=None):
     slug = catalog.slug(source) if source else os.path.basename(work)
+    with _submit_lock:
+        for j in manager.active(kind='pipeline', game=slug):
+            raise HTTPException(409, 'there is already a job for %s (%s)' % (slug, j.id))
+        return manager.submit('pipeline', title, _pipeline_fn(source, work, steps, after_deck), lane='build',
+                              game=slug, params={'source': source, 'work': work, 'steps': steps,
+                                                 'after_deck': after_deck})
 
+
+def _pipeline_fn(source, work, steps, after_deck=None):
     def fn(job):
         res = pipeline.run(job, source=source, work=work, steps=steps)
         if after_deck:
             _submit_deck(res['work'], **after_deck)
         return res
-    with _submit_lock:
-        for j in manager.active(kind='pipeline', game=slug):
-            raise HTTPException(409, 'there is already a job for %s (%s)' % (slug, j.id))
-        return manager.submit('pipeline', title, fn, lane='build', game=slug,
-                              params={'source': source, 'work': work, 'steps': steps})
+    return fn
 
 
 @app.post('/api/download')
@@ -224,8 +228,23 @@ def _submit_download(item, name, then=None):
         raise OSError('Not enough space on %s: %.1f GB free, %.1f GB still to download' % (
             config.load()['download_dir'], free, (f['size'] - have) / 1e9))
     title, _ = catalog.parse_name(name)
+    with _submit_lock:
+        for j in manager.active(kind='download'):
+            if j.params.get('item') == item and j.params.get('name') == name:
+                return j
+        return manager.submit('download', 'Download: %s' % title, _download_fn(item, name, then, f, dest),
+                              lane='download', game=catalog.slug(name),
+                              params={'item': item, 'name': name, 'then': then, 'size': f['size'],
+                                      'md5': f.get('md5') or ''})
+
+
+def _download_fn(item, name, then, f, dest):
+    """f: {size, md5} of the file in the item; dest: where it goes."""
+    title, _ = catalog.parse_name(name)
 
     def fn(job):
+        # A download picks up where it stopped: a restart of the app does not wait for it.
+        job.drain_stop = True
         job.progress = jobs.with_rate(lambda: {
             'done': os.path.getsize(dest) if os.path.exists(dest) else 0, 'total': f['size']})
         job.event('step', 'Downloading %s (%.2f GB) to %s' % (name, f['size'] / 1e9, dest))
@@ -239,12 +258,7 @@ def _submit_download(item, name, then=None):
             pj = _submit_pipeline(title, source=dest)
             job.event('info', 'Preparation queued: job %s' % pj.id, job=pj.id)
         return {'path': dest}
-    with _submit_lock:
-        for j in manager.active(kind='download'):
-            if j.params.get('item') == item and j.params.get('name') == name:
-                return j
-        return manager.submit('download', 'Download: %s' % title, fn, lane='download',
-                              game=catalog.slug(name), params={'item': item, 'name': name, 'then': then})
+    return fn
 
 
 @app.get('/api/downloads')
@@ -616,7 +630,8 @@ def _scene_refs_job(job, w, slug):
     for m in scenes.pending_refs(slug):
         job.event('step', 'Reference pictures of "%s" (a window opens for a few seconds)' % m['label'])
         try:
-            scenes.make_refs(job, w, slug, m['id'])
+            with pipeline.game_turn(job, slug):
+                scenes.make_refs(job, w, slug, m['id'])
             made += 1
             job.event('ok', '"%s": ready; it is checked after every ReXNative change' % m['label'])
         except scenes.SceneError as e:
@@ -670,7 +685,8 @@ def game_scenes_check(slug: str):
     title = games.info(w)['title']
 
     def fn(job):
-        r = scenes.check_all(job, w, slug)
+        with pipeline.game_turn(job, slug):
+            r = scenes.check_all(job, w, slug)
         out = {'at': jobs.now(), 'rex': scenes.build_rex(w), 'checked': r['checked'], 'worse': r['worse'],
                'better': r['better'], 'changed': r['changed'], 'job': job.id}
         state.update('games', state.game_key(w), {'scenes_check': out})
@@ -821,7 +837,7 @@ def game_report(slug: str, body: dict = Body(...)):
         return {'report': rid}
     title = games.info(w)['title']
     j = manager.submit('report', 'Report: %s' % title,
-                       lambda job: pipeline.report_job(job, w, rid), lane='build', game=slug,
+                       lambda job: pipeline.report_job(job, w, rid), lane=pipeline.report_lane(), game=slug,
                        params={'report': rid})
     state.update('reports', rid, {'job': j.id})
     return dict(_job(j), report=rid)
@@ -909,7 +925,9 @@ def _submit_deck(work, action='install', root=None, try_seconds=None, force_sett
     title = ('Install to the Deck: %s' if action == 'install' else 'Resend to the Deck: %s') % slug
     return manager.submit('deck', title, lambda job: deck.install_job(
         job, work, root=root, steam=steam, try_seconds=try_seconds, force_settings=force_settings,
-        wait=wait), lane='deck', game=slug, params={'action': action, 'root': root})
+        wait=wait), lane='deck', game=slug, params={
+            'action': action, 'root': root, 'work': work, 'steam': steam, 'try_seconds': try_seconds,
+            'force_settings': force_settings, 'wait': wait})
 
 
 @app.post('/api/games/{slug}/deck')
@@ -2044,14 +2062,29 @@ def deck_report_job(job, w, slug, body, rid):
     state.update('reports', rid, {'captures': caps, 'deck_files': notes})
     job.result.update(stage='claude')
     sub = manager.submit('report', 'Report: %s' % games.info(w)['title'],
-                         lambda j: pipeline.report_job(j, w, rid), lane='build', game=slug,
+                         lambda j: pipeline.report_job(j, w, rid), lane=pipeline.report_lane(), game=slug,
                          params={'report': rid})
     state.update('reports', rid, {'job': sub.id})
-    orders._follow(job, sub, 'claude', hooks)
+    return _deck_report_rest(job, w, slug, rid, sub)
+
+
+def _deck_report_rest(job, w, slug, rid, sub=None):
+    """A Deck report from its investigation on: follows it, then sends the fixed version. Also
+    where the job starts again after a restart of the app (stage 'claude' or 'deck_send')."""
+    hooks = orders.Hooks
+    job.progress = orders._progress(job, hooks)
+    if job.result.get('stage') != 'deck_send':
+        sub = sub or manager.get((state.get('reports', rid) or {}).get('job') or job.result.get('sub'))
+        if sub is None:
+            raise RuntimeError('the report job is gone')
+        orders._follow(job, sub, 'claude', hooks)
     rep = state.get('reports', rid) or {}
     if rep.get('commits') or rep.get('edited'):
+        # After a restart: the transfer already queued (or running), not a second one.
+        sub = next(iter(manager.active(kind='deck', game=slug)), None) if \
+            job.result.get('stage') == 'deck_send' else None
         job.result.update(stage='deck_send')
-        sub = _submit_deck(w, action='resend', steam=False, force_settings=True, wait=True)
+        sub = sub or _submit_deck(w, action='resend', steam=False, force_settings=True, wait=True)
         orders._follow(job, sub, 'deck_send', hooks)
         job.event('ok', 'The fixed version is on the Deck: try it')
         job.result.update(stage='done')
@@ -2081,7 +2114,8 @@ def remote_report(slug: str, body: dict = Body(...)):
                        lambda job: deck_report_job(job, w, slug, body, rid), lane='orders', game=slug,
                        params={'report': rid, 'chips': chips, 'capture': bool(body.get('capture')),
                                'saves': bool(body.get('saves', True)),
-                               'snapshots': bool(body.get('snapshots', True))})
+                               'snapshots': bool(body.get('snapshots', True)),
+                               'seconds': body.get('seconds')})
     return _job(j)
 
 
@@ -2139,25 +2173,37 @@ def _batch_progress(job):
 
 
 def deck_batch_job(job, mode, items):
-    job.result.update(total=len(items), ok=[], failed=[])
+    # After a restart of the app the job runs again: the games already done stay done.
+    seen = job.result.setdefault('seen', [])
+    job.result.setdefault('ok', [])
+    job.result.setdefault('failed', [])
+    job.result['total'] = len(items)
     job.progress = _batch_progress(job)
     for i, (slug, w, name) in enumerate(items):
+        if slug in seen:
+            continue
         job.check()
         job.result.update(i=i, current=name)
         try:
             if mode == 'rebuild':
                 p = _submit_pipeline(name, work=w, steps=['build', 'boot', 'deckpc'])
                 orders._follow(job, p, 'build', orders.Hooks)
-            orders._follow(job, _submit_update(slug, w, wait=True), 'deck', orders.Hooks)
+            sent = next(iter(manager.active(kind='deck', game=slug)), None)
+            orders._follow(job, sent or _submit_update(slug, w, wait=True), 'deck', orders.Hooks)
+            seen.append(slug)
             job.result['ok'].append(name)
             job.event('ok', '%s: %s (%d of %d)' % (name, 'rebuilt and sent' if mode == 'rebuild' else 'updated',
                                                    i + 1, len(items)))
         except jobs.Cancelled:
             raise
+        except jobs.Requeue:
+            raise
         except HTTPException as e:
+            seen.append(slug)
             job.result['failed'].append(name)
             job.event('fail', '%s: %s' % (name, e.detail))
         except Exception as e:  # noqa: BLE001 - um jogo que falha não pára os outros
+            seen.append(slug)
             job.result['failed'].append(name)
             job.event('fail', '%s: %s' % (name, str(e)[:200]))
     ok, failed = job.result['ok'], job.result['failed']
@@ -2179,7 +2225,7 @@ def _submit_batch(mode, from_deck=False):
         if not items:
             raise HTTPException(400, 'every game on the Deck is up to date' if mode == 'update'
                                 else 'every game on the Deck has the latest fixes')
-        params = {'mode': mode, 'slugs': [x[0] for x in items]}
+        params = {'mode': mode, 'slugs': [x[0] for x in items], 'names': {x[0]: x[2] for x in items}}
         if from_deck:
             params['from_deck'] = True
         return manager.submit('deck-batch', '%s: %d game(s)' % (BATCH_TITLE[mode], len(items)),
@@ -2267,7 +2313,17 @@ def _submit_kit(title='Install the Manager on the Deck', from_deck=False):
 @app.get('/api/version')
 def version_state(fetch: bool = False):
     """A versão a correr, a do disco e a do GitHub, o que muda, e as do lançador e do plugin no Deck."""
-    return versions.status(fetch=fetch)
+    return _version_status(fetch=fetch)
+
+
+def _version_status(fetch=False):
+    """versions.status, and for a pending restart what it waits for (the jobs running now) and how
+    many queued jobs continue after it."""
+    st = versions.status(fetch=fetch)
+    if st['restart'].get('pending'):
+        first, later = manager.drain_state()
+        st['restart'].update(waits_for=[j.title for j in first][:8], later=len(later))
+    return st
 
 
 @app.post('/api/version/update')
@@ -2282,16 +2338,17 @@ def version_update():
         r = versions.restart_when_idle(manager, 'update to %s' % st['disk'])
         if r.get('refused'):
             raise HTTPException(409, 'Updated, but not restarted: %s' % r['refused'])
-    return dict(versions.status(), message=text)
+    return dict(_version_status(), message=text)
 
 
 @app.post('/api/version/restart')
 def version_restart():
-    """Reinicia a app (a versão do disco) quando nenhuma tarefa estiver a correr."""
+    """Reinicia a app (a versão do disco) quando as tarefas que estão a correr acabarem; as que estão
+    em fila continuam depois (jobs.Manager.resume)."""
     r = versions.restart_when_idle(manager, 'restart')
     if r.get('refused'):
         raise HTTPException(409, 'Not restarted: %s' % r['refused'])
-    return versions.status()
+    return _version_status()
 
 
 @app.get('/api/server/log')
@@ -2354,6 +2411,95 @@ def autostart(body: dict = Body(...)):
     elif os.path.exists(f):
         os.remove(f)
     return {'autostart': os.path.exists(f)}
+
+
+# -- a fila depois de um reinício ---------------------------------------------------------------------
+# Para cada tipo de tarefa, a função que a volta a fazer a partir do que a tarefa guardou (params,
+# result); None quando não guardou o suficiente (uma tarefa de uma versão anterior): essa fica como
+# interrompida. As receitas só leem: são chamadas muitas vezes (jobs.Manager.resumable).
+def _r_pipeline(j):
+    p = j.params or {}
+    if not p.get('source') and not p.get('work'):
+        return None
+    return _pipeline_fn(p.get('source'), p.get('work'), p.get('steps'), p.get('after_deck'))
+
+
+def _r_report(j):
+    rid = (j.params or {}).get('report')
+    rep = state.get('reports', rid) if rid else None
+    w = games.find(rep.get('slug')) if rep and rep.get('slug') else None
+    if not w:
+        return None
+    return lambda job: pipeline.report_job(job, w, rid)
+
+
+def _r_batch(j):
+    p = j.params or {}
+    if not p.get('slugs'):
+        return None
+    return lambda job: pipeline.batch_job(job, list(p['slugs']), p.get('reason') or '')
+
+
+def _r_download(j):
+    p = j.params or {}
+    if not p.get('item') or not p.get('name') or not p.get('size'):
+        return None
+    return _download_fn(p['item'], p['name'], p.get('then'), {'size': p['size'], 'md5': p.get('md5') or ''},
+                        _download_path(p['item'], p['name']))
+
+
+def _r_deck(j):
+    p = j.params or {}
+    if not p.get('work') or 'steam' not in p:
+        return None
+    return lambda job: deck.install_job(job, p['work'], root=p.get('root'), steam=p['steam'],
+                                        try_seconds=p.get('try_seconds'),
+                                        force_settings=bool(p.get('force_settings')), wait=bool(p.get('wait')))
+
+
+def _r_order(j):
+    e = j.params or {}
+    if not e.get('item') or not e.get('name') or not e.get('slug'):
+        return None
+    return lambda job: orders.order_job(job, orders.Hooks, dict(e))
+
+
+def _r_deck_report(j):
+    p = j.params or {}
+    rid = p.get('report')
+    rep = state.get('reports', rid) if rid else None
+    w = games.find(rep.get('slug')) if rep and rep.get('slug') else None
+    if not w:
+        return None
+    slug = rep['slug']
+    if j.result.get('stage') in ('claude', 'deck_send'):
+        return lambda job: _deck_report_rest(job, w, slug, rid)
+    if 'seconds' not in p:  # a job of a version that did not save what the player asked
+        return None
+    return lambda job: deck_report_job(job, w, slug, dict(p), rid)
+
+
+def _r_deck_batch(j):
+    p = j.params or {}
+    if p.get('mode') not in BATCH_TITLE or not p.get('slugs'):
+        return None
+
+    def fn(job):
+        items = [(s, games.find(s)) for s in p['slugs']]
+        names = p.get('names') or {}
+        return deck_batch_job(job, p['mode'], [(s, w, names.get(s) or games.info(w)['title'])
+                                               for s, w in items if w])
+    return fn
+
+
+RECIPES = {'pipeline': _r_pipeline, 'report': _r_report, 'batch': _r_batch, 'download': _r_download,
+           'deck': _r_deck, 'order': _r_order, 'deck-report': _r_deck_report, 'deck-batch': _r_deck_batch,
+           'sync': lambda j: (lambda job: rexrepo.sync(job))}
+# The self-test of the fix loop is a 'pipeline' in the quick lane: not one of these.
+RECIPES['pipeline'] = lambda j, make=_r_pipeline: make(j) if j.lane == 'build' else None
+_resumed = manager.resume(RECIPES)
+if _resumed:
+    print('%d job(s) back in the queue after the restart' % _resumed)
 
 
 @app.exception_handler(Exception)

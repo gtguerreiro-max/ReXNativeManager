@@ -131,8 +131,15 @@ def _other_builds():
 
 
 def update_job(job):
-    """Traz o oficial, põe as nossas alterações por cima e compila o SDK (a pista das compilações:
-    nenhum jogo compila ao mesmo tempo)."""
+    """Traz o oficial, põe as nossas alterações por cima e compila o SDK (a pista das compilações, e a
+    dos relatórios parada enquanto dura: nenhum jogo compila ao mesmo tempo)."""
+    if jobs.Job.manager is None:
+        return _update_job(job)
+    with jobs.Job.manager.alone(job, ('report',)):
+        return _update_job(job)
+
+
+def _update_job(job):
     src = source_dir()
     if not src or not os.path.isdir(os.path.join(src, '.git')):
         raise RuntimeError('The SDK source folder was not found (%s): set sdk_source_dir in the settings' % src)

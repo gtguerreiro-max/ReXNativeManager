@@ -365,8 +365,21 @@ fixes) and the commit gets the git tag `vX.Y.Z`. The PC page shows the running v
 top; it turns yellow when a newer one is on disk (a commit not restarted yet) or on GitHub
 (`origin/main`, checked every 30 minutes). Clicking it shows what changed and offers **Update from
 GitHub and restart** (`git pull --ff-only`, refused with uncommitted changes) or **Restart**: the
-app restarts by itself once no job is running or queued (`POST /api/version/update`,
+app restarts by itself once the jobs that are running end (`POST /api/version/update`,
 `/api/version/restart`; a hidden PowerShell waits for it to exit and opens `iniciar.bat` again).
+The queue survives it: queued jobs do not start while a restart is pending and are back in the
+queue, in order, when the app opens again; requests from the Deck, a download and a transfer that
+waits for a sleeping Deck give their turn back and pick up where they were. The same happens when
+the app is closed with jobs queued (the job that was running is marked interrupted).
+
+Jobs run in lanes: downloads in parallel (`max_downloads`), builds and tests one at a time (the
+build lane), reports one at a time in a lane of their own, Deck transfers one at a time. A report
+is investigated beside whatever the build lane does, in a second copy of ReXNative that only
+reports use (`report_rexnative_dir`, by default the app's copy with `-reports`, a git worktree made
+the first time) and with its own live game. Only one job at a time builds or tests a given game,
+the test bench runs one game at a time, and an SDK update keeps the report lane closed.
+`report_lane` off puts reports back in the build lane. `python scripts/test_jobs.py` tests the
+queue with made-up jobs.
 Deck mode shows the version in its status line, opens "What's new" once after the PC updated, and
 has "What's new" in the Exit menu.
 

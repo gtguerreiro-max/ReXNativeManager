@@ -16,7 +16,8 @@ _rex_lock = threading.Lock()
 def rexnative(module):
     """Um módulo do pacote rexnative da cópia configurada (rexnative_dir). Quando o ficheiro mudou
     (a worktree foi atualizada para o main), é lido outra vez: antes ficava o de quando a app abriu."""
-    root = config.load()['rexnative_dir']
+    # The app's own copy, also in the report lane (config.override): one package for the process.
+    root = config.stored()['rexnative_dir']
     with _rex_lock:
         if root not in sys.path:
             sys.path.insert(0, root)

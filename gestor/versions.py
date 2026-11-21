@@ -147,8 +147,10 @@ def compile_errors():
 
 
 def restart_when_idle(manager, reason='update'):
-    """Reinicia a app quando nenhuma tarefa estiver a correr ou em fila (as tarefas não se perdem a
-    meio). Um processo à parte espera que esta saia e volta a abrir o iniciar.bat."""
+    """Reinicia a app quando as tarefas que estão a correr acabarem (não se perdem a meio). As que
+    estão em fila não começam: ficam em jobs.json e voltam à fila quando a app abrir
+    (jobs.Manager.drain / resume); antes da 1.18 esperava-se pela fila vazia, o que com pedidos
+    seguidos levava horas. Um processo à parte espera que esta saia e volta a abrir o iniciar.bat."""
     if _restart['pending']:
         return dict(_restart)
     broken = compile_errors()
@@ -159,10 +161,8 @@ def restart_when_idle(manager, reason='update'):
     _restart.update(pending=True, reason=reason, at=jobs.now())
 
     def wait_and_go():
-        while True:
-            if not any(j.status in ('running', 'queued') for j in manager.list(limit=400)):
-                break
-            time.sleep(5)
+        while not manager.drain():
+            time.sleep(2)
         time.sleep(1)
         bat = os.path.join(config.ROOT, 'iniciar.bat')
         ps = ('Start-Sleep -Seconds 4; Start-Process -FilePath \'%s\' -ArgumentList \'--no-browser\' '

@@ -35,6 +35,11 @@ DEFAULTS = {
     # O repositório do ReXNative (o clone, e para onde vão os pull requests de quem não o pode
     # publicar diretamente).
     'rexnative_repo': 'gtguerreiro-max/ReXNative',
+    # Reports run in a lane of their own, beside the build lane, in a second copy of ReXNative that
+    # only they use (a worktree of rexnative_dir's repository; empty: rexnative_dir + '-reports').
+    # Off: reports wait their turn in the build lane, as before 1.18.
+    'report_lane': True,
+    'report_rexnative_dir': '',
     'python': '',  # vazio: o Python que corre a app
     # As ferramentas do ReXNative (o SDK do ReXGlue instalado, o LLVM, os SDKs opcionais): cada um
     # aponta para as suas nas Definições.
@@ -135,9 +140,27 @@ DEFAULTS = {
 
 _lock = threading.Lock()
 _cache = None
+_local = threading.local()
 
 
-def load():
+class override:
+    """Settings for the code this thread runs inside the `with` only: the report lane works in its
+    own copy of ReXNative and keeps its own live game (pipeline.report_job), while the build lane
+    goes on with the usual ones. A thread started inside does not inherit them."""
+
+    def __init__(self, **values):
+        self.values = values
+
+    def __enter__(self):
+        self.before = getattr(_local, 'values', None)
+        _local.values = dict(self.before or {}, **self.values)
+        return self
+
+    def __exit__(self, *exc):
+        _local.values = self.before
+
+
+def _stored():
     global _cache
     with _lock:
         if _cache is None:
@@ -154,8 +177,22 @@ def load():
         return copy.deepcopy(_cache)
 
 
+def stored():
+    """The settings as saved, whatever this thread overrides."""
+    return _stored()
+
+
+def load():
+    cfg = _stored()
+    cfg.update(getattr(_local, 'values', None) or {})
+    return cfg
+
+
 def get(key):
     """Uma definição só (sem copiar as outras todas, como load faz)."""
+    over = getattr(_local, 'values', None) or {}
+    if key in over:
+        return copy.deepcopy(over[key])
     with _lock:
         if _cache is not None:
             return copy.deepcopy(_cache.get(key, DEFAULTS.get(key)))
@@ -165,7 +202,7 @@ def get(key):
 def save(changes):
     """Guarda as definições alteradas (só as que diferem das de origem vão para config.json)."""
     global _cache
-    cfg = load()
+    cfg = _stored()  # never a thread's override
     for k, v in changes.items():
         if k in DEFAULTS:
             cfg[k] = v

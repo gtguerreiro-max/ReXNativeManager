@@ -56,10 +56,93 @@ def web_url(remote):
     return r[:-4] if r.endswith('.git') else r
 
 
+def report_dir():
+    """The second copy of ReXNative, the report lane's (config report_lane), or None when reports
+    run in the build lane."""
+    cfg = config.stored()
+    if not cfg.get('report_lane', True):
+        return None
+    return cfg.get('report_rexnative_dir') or (cfg['rexnative_dir'].rstrip('\\/') + '-reports')
+
+
+def ensure_report_dir():
+    """Makes the report lane's copy the first time: a worktree of the app's ReXNative repository,
+    detached at the published main, with the app's ports.json (not in git). Returns its folder."""
+    d, base = report_dir(), config.stored()['rexnative_dir']
+    if not os.path.isdir(os.path.join(d, 'rexnative')):
+        if not os.path.isdir(base):
+            raise RuntimeError('no ReXNative copy yet (%s): build a game first' % base)
+        _git(['fetch', '-q', 'origin'], base, timeout=90)
+        _git(['worktree', 'prune'], base)
+        rc, _, err = _git(['worktree', 'add', '--detach', d, 'origin/main'], base, timeout=600)
+        if rc != 0:
+            raise RuntimeError('could not make the reports\' copy of ReXNative (%s): %s. Reports can '
+                               'run in the build lane instead: Settings, "report_lane" off'
+                               % (d, err[-300:]))
+    src, dst = os.path.join(base, 'ports.json'), os.path.join(d, 'ports.json')
+    try:
+        if os.path.exists(src) and (not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst)):
+            with open(src, 'rb') as a, open(dst, 'wb') as b:
+                b.write(a.read())
+    except OSError:
+        pass
+    return d
+
+
+def _same(a, b):
+    return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def _other_copy(d):
+    """The other lane's copy of ReXNative (the app's for the reports' one and the other way round),
+    or None."""
+    a, b = config.stored()['rexnative_dir'], report_dir()
+    if not b or not os.path.exists(os.path.join(a, '.git')) or not os.path.exists(os.path.join(b, '.git')):
+        return None
+    return b if _same(d, a) else a if _same(d, b) else None
+
+
+def _take_unpublished(d, log):
+    """Commits the assistant made in the other lane's copy and could not publish (someone who
+    cannot push to ReXNative: they wait in a pull request) come to this copy too, so both lanes
+    build the same code. Nothing to do for who publishes: main has them."""
+    o = _other_copy(d)
+    if not o:
+        return
+    rc, head, _ = _git(['rev-parse', 'HEAD'], o)
+    if rc != 0 or not head:
+        return
+    # Commits of origin/main..<the other HEAD> with no equal change here.
+    rc, out, _ = _git(['cherry', 'HEAD', head, 'origin/main'], d)
+    new = [l[2:].strip() for l in out.splitlines() if l.startswith('+ ')] if rc == 0 else []
+    if not new:
+        return
+    rc, _, err = _git(['cherry-pick'] + new, d)
+    if rc != 0:
+        _git(['cherry-pick', '--abort'], d)
+        log('info', 'ReXNative: %d unpublished commit(s) of the other copy (%s) do not apply here (%s)' % (
+            len(new), o, err[-160:]))
+    else:
+        log('info', 'ReXNative: %d unpublished commit(s) of the other copy (%s) brought here' % (len(new), o))
+
+
 def sync(job=None):
     """Põe a worktree na última versão publicada; nunca deita fora trabalho por gravar ou
-    commits por publicar (com esses, tenta um rebase e desiste se tiver conflitos)."""
+    commits por publicar (com esses, tenta um rebase e desiste se tiver conflitos). No fim, os commits
+    por publicar da cópia da outra pista vêm para esta (_take_unpublished)."""
     log = (lambda kind, text: job.event(kind, text)) if job else (lambda kind, text: print(text))
+    st = _sync(log, job)
+    try:
+        if st.get('exists') and not st.get('dirty'):
+            before = st.get('head')
+            _take_unpublished(st['dir'], log)
+            st = status() if before else st
+    except Exception as e:  # noqa: BLE001 - never a reason to stop a job
+        log('info', 'ReXNative: the other copy was not looked at (%s)' % str(e)[:160])
+    return st
+
+
+def _sync(log, job=None):
     d = config.load()['rexnative_dir']
     if not os.path.isdir(d):
         # A primeira vez: um clone do ReXNative só desta app.
