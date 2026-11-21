@@ -37,6 +37,9 @@ WINDOW = 20
 SLOW_SHARE = 0.3
 SLOW_FLOOR = 0.6e6
 HELPLESS = 3
+# A dropped connection that had brought at least this much is not a failed try: the five tries are
+# of drops in a row that brought nothing (a line that drops now and then still gets a large file).
+PROGRESS = 8 << 20
 
 
 class Slow(Exception):
@@ -119,11 +122,15 @@ def download(item, name, dest, size, md5):
                 continue
             except Exception as e:  # noqa: BLE001 - retoma onde parou
                 now = os.path.getsize(dest) if os.path.exists(dest) else 0
-                log('connection dropped at %s (%s): try %d of 5' % (fmt(now), e, attempt))
+                if now - before >= PROGRESS:
+                    attempt = 0
+                    log('connection dropped at %s (%s): it was moving, reconnecting' % (fmt(now), e))
+                else:
+                    log('connection dropped at %s (%s): try %d of 5' % (fmt(now), e, attempt))
                 if isinstance(e, PermissionError) or 'Forbidden' in str(e) or '403' in str(e) or '401' in str(e):
                     sys.exit('the Internet Archive refused the request (%s): check the S3 keys in '
                              '~/.config/internetarchive/ia.ini (ReXNative scripts/ia-keys.ps1)' % e)
-                time.sleep(10 * attempt)
+                time.sleep(10 * max(attempt, 1))
                 continue
             now = os.path.getsize(dest) if os.path.exists(dest) else 0
             log('received %s in %.0f s' % (fmt(now - before), time.time() - t0))

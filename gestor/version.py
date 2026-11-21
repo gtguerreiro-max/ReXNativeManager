@@ -8,10 +8,16 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.18.0'
+VERSION = '1.18.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.18.1', '2026-11-21', [
+        'Downloads on a line that drops now and then finish: a dropped connection that had brought data '
+        '(8 MB or more) no longer counts as a failed try. The five tries are of drops in a row that bring '
+        'nothing. Before, any five drops ended the download, however far each one got.',
+        'scripts/test_download.py tests the download worker with a made-up connection.',
+    ]),
     ('1.18.0', '2026-11-21', [
         'The app restarts between jobs, and the queue comes back. A restart (after an update, or Restart) '
         'now waits only for the jobs that are running: the queued ones stay queued and continue when the app '
