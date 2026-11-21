@@ -182,8 +182,12 @@ def play(job, work, trace, out_dir, extra=()):
         shutil.rmtree(out_dir)
     os.makedirs(out_dir)
     log_tag = 'scene-%d' % int(time.time())
+    title = games.info(work).get('title') or os.path.basename(work)
     args = [exe, '--log_file=live\\%s.log' % log_tag, '--fullscreen=false', '--window_width=1280',
-            '--window_height=720', '--rexnative_capture_dir=%s' % out_dir,
+            '--window_height=720',
+            # The window says what it is: the Manager's test scene, not a game to play.
+            '--ui.title=%s - ReXNative Manager test scene: please do not play in this window' % title,
+            '--rexnative_capture_dir=%s' % out_dir,
             '--rexnative_trace_play=%s' % trace, '--rexnative_trace_play_loops=2',
             '--rexnative_trace_play_dump=true', '--rexnative_trace_play_fps=0'] + list(extra)
     if job:

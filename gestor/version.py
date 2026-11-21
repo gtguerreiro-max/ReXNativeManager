@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.21.0'
+VERSION = '1.21.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.21.1', '2026-11-21', [
+        'The windows of the Manager tests say so in their title (for example "Blur - ReXNative Manager test '
+        '(boot test): please do not play in this window"): the boot tests, the classic runs, the test '
+        'scenes, and every live.ps1 window of the assistant. A player at the PC had taken a boot test for '
+        'the game they had opened and set it to full screen while the test switched renderers and then '
+        'closed it. Needs ReXNative 2b13ddd or later for the live.ps1 windows.',
+    ]),
     ('1.21.0', '2026-11-21', [
         'Gameplay scenes: each game gets a test scene of real gameplay once. A short Claude session (Sonnet) '
         'starts the game, drives it with the pad until the player is playing, records the frames there, and '

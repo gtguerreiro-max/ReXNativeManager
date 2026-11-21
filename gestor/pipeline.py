@@ -594,6 +594,24 @@ class game_turn:
             self.lock.release()
 
 
+TEST_TITLE = '%s - ReXNative Manager test (%s): please do not play in this window'
+
+
+def _test_title(run, what):
+    """-Title for live.ps1: the window says it is the Manager's test, so a player at the PC does not
+    take it for the game they opened (and does not press its menus). Only with a live.ps1 that has
+    -Title (ReXNative 2026-11-21 on): an older one would refuse to start."""
+    script = os.path.join(config.load()['rexnative_dir'], 'scripts', 'live.ps1')
+    try:
+        with open(script, encoding='utf-8', errors='replace') as f:
+            if '[string]$Title' not in f.read():
+                return []
+    except OSError:
+        return []
+    title = games.info(os.path.dirname(run)).get('title') or os.path.basename(os.path.dirname(run))
+    return ['-Title', TEST_TITLE % (title, 'boot test' if what == 'native' else '%s run' % what)]
+
+
 def timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=False, record=False,
               quick=False):
     """One game at a time (_BENCH), then _timed_run."""
@@ -638,7 +656,7 @@ def _timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fa
     offsets = _log_sizes(run)
     t0 = time.time()
     try:
-        rc, out = _live(['start', '-Dir', run, '-Exe', name + '.exe', '-Extra', extra])
+        rc, out = _live(['start', '-Dir', run, '-Exe', name + '.exe', '-Extra', extra] + _test_title(run, mode))
     except (subprocess.SubprocessError, OSError) as e:
         # O live.ps1 não respondeu: se o jogo chegou a arrancar, fecha-se.
         rc, out = 1, 'live.ps1 start did not answer: %s' % e
