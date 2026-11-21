@@ -8,10 +8,14 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.19.0'
+VERSION = '1.19.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.19.1', '2026-11-21', [
+        'Deck mode: while the assistant fixes a step, the strip of the request in progress says so in a few '
+        'words instead of showing the command it is running (the details stay in Requests).',
+    ]),
     ('1.19.0', '2026-11-21', [
         'Deck mode, L2 and R2 jump in the game grids: to the previous or the next letter in a list sorted '
         'by name (the letter shows in the middle of the screen; hold the trigger for letter after letter), '

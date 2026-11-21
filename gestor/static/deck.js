@@ -322,7 +322,9 @@ function nowStrip() {
   const waits = o.status === 'queued' || (p.waiting && o.status === 'running');
   el.classList.remove('hide');
   el.onclick = () => switchTab('orders');
-  el.innerHTML = `<span class="pulse ${waits ? 'q' : ''}"></span><span class="t">${esc(otitle(o))}</span><span class="s">${esc(stageText(o))}</span>
+  // One line: while the assistant fixes a step, that, not the command it is running.
+  const text = p.pstep === 'claude' && !waits ? 'Claude is fixing a step that failed on the PC' : stageText(o);
+  el.innerHTML = `<span class="pulse ${waits ? 'q' : ''}"></span><span class="t">${esc(otitle(o))}</span><span class="s">${esc(text)}</span>
     ${pc != null && o.status === 'running' && !waits ? `<span class="pb"><span style="width:${Math.max(0, Math.min(100, pc)).toFixed(1)}%"></span></span>` : ''}
     ${act.length > 1 ? `<span class="more">+${act.length - 1} more</span>` : ''}`;
 }
