@@ -14,7 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (agents, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
+from . import (achievements, agents, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
                games, github, info, jobs, lan, linuxbuild, orders, owngames, pipeline, rexlog, rexrepo, saves,
                scenes, sdk, state, tunings, versions, xna)
 
@@ -1369,7 +1369,8 @@ def _deck_view(d):
             'update': bool(built and g.get('mtime') and built > g['mtime'] + 120),
             'art': 'portrait' in (loc.get('art') or []), 'on_pc': bool(loc), 'mtime': g.get('mtime'),
             'appid': (sc or {}).get('appid'), 'linux': bool(g.get('linux')), 'runner': g.get('runner') or 'windows',
-            'job': act[0].id if act else None, 'gestor': bool(sc and sc.get('appid') == gid)})
+            'job': act[0].id if act else None, 'gestor': bool(sc and sc.get('appid') == gid),
+            'achievements': achievements.summary(loc['work'], g['slug']) if loc.get('work') else None})
     return out
 
 
@@ -1410,8 +1411,58 @@ def remote_home(request: Request, refresh: bool = False, beat: bool = True, plug
                      'sd': d.get('sd'), 'playing': bool(playing),
                      'playing_title': d.get('playing_title') if playing else None},
             'games': [g for g in _deck_view(d) if not g['gestor']], 'orders': _orders_list(),
+            'achievements_recent': _recent_achievements(),
             'pending': {'add': len(p['add']), 'remove': len(p['remove']),
                         'titles': [a['title'] for a in p['add'].values()]}}
+
+
+def _recent_achievements():
+    try:
+        works = {g['slug']: g['work'] for g in games.scan(deck.index()) if g.get('work')}
+        return achievements.recent(works)
+    except Exception:  # noqa: BLE001 - nunca estraga a página
+        return []
+
+
+# -- conquistas: a lista do SPA do jogo e as desbloqueadas no Deck e neste PC --------------------------
+def _achievements(slug):
+    w = _work(slug)
+    v = achievements.view(w, slug)
+    inf = games.info(w)
+    title = inf['title']
+    if not v:
+        reason = ('This game has no achievements list.' if os.path.exists(os.path.join(w, 'run', 'image.bin')) else
+                  'Built before the Manager kept the game image: rebuild it to see its achievements.'
+                  if inf.get('built') else 'Not built yet: its achievements show once it is built.')
+        return {'none': True, 'title': title, 'reason': reason}
+    return dict(v, title=title, deck_at=(state.get('deck', 'last') or {}).get('at'))
+
+
+def _achievement_icon(slug, image_id):
+    png = achievements.icon(_work(slug), image_id)
+    if not png:
+        raise HTTPException(404)
+    return Response(png, media_type='image/png', headers={'Cache-Control': 'max-age=86400'})
+
+
+@app.get('/api/games/{slug}/achievements')
+def game_achievements(slug: str):
+    return _achievements(slug)
+
+
+@app.get('/api/games/{slug}/achievements/icon/{image_id}')
+def game_achievement_icon(slug: str, image_id: int):
+    return _achievement_icon(slug, image_id)
+
+
+@app.get('/api/remote/achievements/{slug}')
+def remote_achievements(slug: str):
+    return _achievements(slug)
+
+
+@app.get('/api/remote/achievements/{slug}/icon/{image_id}')
+def remote_achievement_icon(slug: str, image_id: int):
+    return _achievement_icon(slug, image_id)
 
 
 @app.post('/api/remote/heartbeat')

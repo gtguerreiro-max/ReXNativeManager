@@ -52,6 +52,9 @@ couch with the controller.
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your
   Deck games with each one's versions and fixes, the games on the PC, the catalogue (pick a game
   and it arrives in your library), requests, free space, **Play**, and reports from the Deck.
+- **Achievements:** each game's Xbox 360 achievements (name, description, gamerscore, icon; secret
+  ones stay hidden until unlocked), with the ones you unlocked on the Deck or the PC and when, on the
+  game page and in Deck mode, which also tells you about new ones.
 - **Decky plugin:** what the PC is doing and the games played last, in the quick access menu.
 - **ReXNative changelog:** every change by day, the games it names, and whether your PC and Deck
   builds have it yet.
@@ -506,6 +509,28 @@ the other games that go through the code that changed, seen in their logs and la
 then queues a job that builds and tests only those, and says whether any got worse: the boot
 failed, or one of its **test scenes** got worse. In Jobs, "Test games…" does the same for the games
 you choose.
+
+### Achievements
+
+The ReXGlue SDK keeps a game's achievements: when the game unlocks one (`XGIUserWriteAchievements`)
+it writes `userdata/achievements/<TitleID>.toml` (`[unlocked.<id>] filetime = N`) in the game's
+folder, but its notification is drawn by the SDK's overlay, which the native renderer does not show.
+The Manager shows them:
+
+- **The list** comes from the game itself: the achievements table (`XACH`), the strings and the PNG
+  icons of the title's SPA, the XDBF resource every title carries, read from the decrypted image
+  `rexnative project` dumps (`run/image.bin`). Parsed once per build and cached in
+  `data_dir/achievements/lists/`. A game built before the image was kept says to rebuild it.
+- **The unlocked ones** come from the Deck (the listing the Manager already does over SSH reads each
+  game's file, a few hundred bytes, also while a game runs) and from `run/userdata/achievements/`
+  on this PC. What was read from the Deck stays in `data_dir/achievements/deck.json`, so the list
+  shows them while the Deck sleeps; an unlock never disappears because a file could not be read.
+- **Where:** the game page's **Achievements** tab on the PC (unlocked first, with the date and where);
+  in Deck mode, the game sheet's line (`2 of 45 · 30 of 1000 G`) and **Achievements** button, a list
+  the D-pad scrolls. Secret achievements (no "show unachieved" flag) show as "Secret achievement"
+  with no icon until unlocked. When Deck mode opens after you played, it names the new ones.
+- `GET /api/games/<slug>/achievements`, `.../achievements/icon/<image id>`, and the same under
+  `/api/remote/achievements/` for Deck mode.
 
 ### Test scenes
 

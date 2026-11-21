@@ -407,9 +407,10 @@ function subtabs(names, on, fn) {
 function gameSub(k) { curSub = k; renderGame(); }
 function renderGame() {
   const g = cur;
-  let h = subtabs([['resumo', 'Summary'], ['cenas', 'Test scenes'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
+  let h = subtabs([['resumo', 'Summary'], ['conquistas', 'Achievements'], ['cenas', 'Test scenes'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
   if (curSub === 'resumo') h += gameSummary(g);
   if (curSub === 'cenas') h += '<div id="scenebox" class="muted">Loading...</div>';
+  if (curSub === 'conquistas') h += '<div id="achbox" class="muted">Loading...</div>';
   if (curSub === 'defs') h += gameSettings(g);
   if (curSub === 'capas') h += '<div id="coverbox" class="muted">Loading...</div>';
   if (curSub === 'tarefas') h += gameJobs(g);
@@ -418,6 +419,31 @@ function renderGame() {
   if (curSub === 'defs') fillQuickForms();
   if (curSub === 'resumo') loadReports();
   if (curSub === 'cenas') loadScenes();
+  if (curSub === 'conquistas') loadAchievements();
+}
+
+// -- conquistas: a lista vem do jogo (o SPA na imagem), as desbloqueadas do Deck e deste PC --
+async function loadAchievements() {
+  const slug = cur && cur.slug;
+  if (!slug) return;
+  let r;
+  try { r = await api(`/api/games/${encodeURIComponent(slug)}/achievements`); } catch (e) { return fail(e); }
+  const box = $('#achbox');
+  if (!box || !cur || cur.slug !== slug || curSub !== 'conquistas') return;
+  box.className = '';
+  if (r.none) { box.innerHTML = `<p class="muted">${esc(r.reason)}</p>`; return; }
+  const s = encodeURIComponent(slug);
+  const WHERE = { deck: 'on the Deck', pc: 'on this PC' };
+  const pct = r.count ? 100 * r.unlocked / r.count : 0;
+  box.innerHTML = `<div class="row" style="gap:16px;align-items:center;flex-wrap:wrap">
+      <b style="font-size:18px">${r.unlocked} of ${r.count} unlocked</b><span class="muted">${r.got_score} of ${r.gamerscore} G</span>
+      <div class="progress" style="flex:1;min-width:160px;max-width:360px"><div style="width:${pct.toFixed(1)}%"></div></div></div>
+    <p class="small muted">The list comes from the game; the unlocked ones from what the game saved when it gave them (on the Deck, read each time the Manager reaches it${r.deck_at ? ', last ' + esc(when(r.deck_at)) : ''}; and from playing on this PC).</p>
+    <div class="achs">${r.items.map(a => `<div class="ach ${a.unlocked ? '' : 'locked'}">
+      ${a.image != null ? `<img src="/api/games/${s}/achievements/icon/${a.image}" alt="" loading="lazy">` : '<div class="ph">?</div>'}
+      <div><b>${esc(a.name)}</b> <span class="g">${a.gamerscore} G</span>
+        <div class="small">${esc(a.description)}</div>
+        <div class="small muted">${a.unlocked ? 'Unlocked ' + (a.when ? esc(when(a.when)) + ' ' : '') + a.where.map(w => WHERE[w] || w).join(' and ') : 'Locked'}</div></div></div>`).join('')}</div>`;
 }
 
 // -- cenas de teste: frames do jogo gravados (traces do ReXNative), desenhados outra vez depois de cada

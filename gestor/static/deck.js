@@ -79,7 +79,7 @@ function focus(el, scroll = true) {
   hints();
 }
 function reveal(el) {
-  const box = el.closest('.view, .sheet');
+  const box = el.closest('.scrollbox, .view, .sheet');  // .scrollbox: a list that scrolls inside a sheet
   if (!box) return;
   const r = el.getBoundingClientRect(), b = box.getBoundingClientRect();
   const m = 70;
@@ -250,6 +250,7 @@ async function refreshHome(readDeck, manual) {
     const prev = S.home;
     S.home = h;
     notifyOrders(prev, h);
+    notifyAchievements(h);
     status();
     const n = (h.orders || []).filter(o => o.status === 'running' || o.status === 'queued').length;
     $('#ordn').textContent = n;
@@ -717,12 +718,14 @@ function openDeckGame(slug) {
         <span>Location</span><b>${g.where === 'sd' ? 'microSD card' : 'Internal storage'}</b>
         <span>Saves</span><b>${g.saves ? g.saves + ' save(s)' : 'none yet'}</b>
         <span>Last played</span><b>${g.last_played ? ago(g.last_played) : 'never'}</b>
+        ${g.achievements && g.achievements.count ? `<span>Achievements</span><b>${g.achievements.unlocked} of ${g.achievements.count} · ${g.achievements.got_score} of ${g.achievements.gamerscore} G</b>` : ''}
       </div>
       ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
       <div class="acts">
         ${g.appid && g.in_library && g.complete ? `<button class="btn p f" data-hint="Play" onclick="playGame('${esc(g.slug)}')">▶ Play</button>` : ''}
         ${g.on_pc && (g.update || !g.complete || (!g.in_library && !g.pending_add)) ? `<button class="btn p f" data-hint="Send" onclick="updateGame('${esc(g.slug)}')">${g.update ? 'Update' : 'Complete'}</button>` : ''}
         ${g.on_pc && stale && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(g.slug)}')">Rebuild and send</button>` : ''}
+        ${g.achievements && g.achievements.count ? `<button class="btn f" data-hint="Open" onclick="openAchievements('${esc(g.slug)}')">Achievements</button>` : ''}
         ${g.on_pc ? `<button class="btn f" onclick="openSettings('${esc(g.slug)}')">Settings</button>` : ''}
         ${g.on_pc ? `<button class="btn f" onclick="openReport('${esc(g.slug)}')">Report a problem</button>` : ''}
         ${g.on_pc ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
@@ -822,6 +825,41 @@ async function linuxDo(slug, what, runner) {
     closeAll();
     setTimeout(() => { refreshHome(); loadPc(); }, 1500);
   } catch (e) { toast(e.message, true); }
+}
+// As conquistas de um jogo: a lista vem do jogo, as desbloqueadas do que ele gravou no Deck.
+async function openAchievements(slug) {
+  let r;
+  try { r = await api('/api/remote/achievements/' + encodeURIComponent(slug)); } catch (e) { toast(e.message, true); return; }
+  if (r.none) { toast(r.reason, true); return; }
+  const s = encodeURIComponent(slug);
+  const row = a => `<div class="ach f${a.unlocked ? '' : ' locked'}" tabindex="-1">
+    ${a.image != null ? `<img src="/api/remote/achievements/${s}/icon/${a.image}" alt="">` : '<div class="ph">?</div>'}
+    <div class="grow"><b>${esc(a.name)}</b><span class="g">${a.gamerscore} G</span>
+      <div class="d">${esc(a.description)}</div>
+      <div class="w">${a.unlocked ? 'Unlocked' + (a.when ? ' ' + esc(when2(a.when)) : '') + (a.where.includes('deck') ? '' : ' on the PC') : 'Locked'}</div></div></div>`;
+  const pct = r.count ? 100 * r.unlocked / r.count : 0;
+  openLayer(`<div class="sheet confirm achsheet" style="width:900px"><h3>Achievements: ${esc(r.title)}</h3>
+    <p style="margin:0 0 6px">${r.unlocked} of ${r.count} unlocked · ${r.got_score} of ${r.gamerscore} G</p>
+    <div class="achbar"><div style="width:${pct.toFixed(1)}%"></div></div>
+    <div class="achlist scrollbox">${r.items.map(row).join('')}</div>
+    <div class="acts"><button class="btn f" onclick="closeLayer()">Close</button></div></div>`, { focus: '.ach' });
+}
+// Conquistas novas desde a última vez que o Gestor as viu (o PC lê-as do Deck sempre que o alcança).
+const ACH_KEY = 'gestor-ach-last';
+function notifyAchievements(h) {
+  const r = h.achievements_recent || [];
+  if (!r.length) return;
+  let last = null;
+  try { last = localStorage.getItem(ACH_KEY); } catch (e) { return; }
+  try { localStorage.setItem(ACH_KEY, r[0].when || ''); } catch (e) { /* sem armazenamento */ }
+  if (last === null) {
+    const n = (h.games || []).reduce((t, g) => t + ((g.achievements || {}).unlocked || 0), 0);
+    if (n) toast(`Achievements: ${n} unlocked so far. Open a game on the Deck tab to see them all.`);
+    return;
+  }
+  const fresh = r.filter(a => (a.when || '') > last);
+  if (fresh.length === 1) toast(`Achievement unlocked in ${fresh[0].title}: ${fresh[0].name} (${fresh[0].gamerscore} G)`);
+  else if (fresh.length > 1) toast(`${fresh.length} achievements unlocked: ${fresh.map(a => a.name).join(', ')}`);
 }
 async function openRestore(slug) {
   const g = deckGame(slug) || { title: slug };

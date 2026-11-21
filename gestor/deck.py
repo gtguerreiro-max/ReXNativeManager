@@ -80,7 +80,20 @@ for where, root in roots:
         skip = playing or light or (only is not None and n not in only)
         saves_size = (None if skip else sum(int((run(['du', '-sb', os.path.join(ud, s)]).split() or ['0'])[0]) for s in saves)) if saves else 0
         logs = sorted(glob.glob(os.path.join(d, 'logs', '*.log')), key=os.path.getmtime)
-        games.append({'slug': n, 'where': where, 'path': d, 'size': du(d),
+        # As conquistas que o SDK grava quando o jogo as dá: userdata/achievements/<TitleID>.toml.
+        ach, cur = {}, None
+        for p in glob.glob(os.path.join(ud, 'achievements', '*.toml')):
+            try:
+                for line in open(p, errors='replace'):
+                    line = line.strip()
+                    if line.startswith('[unlocked.') and line.endswith(']'):
+                        cur = line[10:-1]
+                        ach[cur] = 0
+                    elif cur and line.startswith('filetime') and '=' in line:
+                        ach[cur] = int(line.split('=', 1)[1].strip() or 0)
+            except (OSError, ValueError):
+                pass
+        games.append({'achievements': ach,'slug': n, 'where': where, 'path': d, 'size': du(d),
                       'exe': exes[0] if exes else None, 'saves': saves, 'saves_size': saves_size,
                       'mtime': max([os.path.getmtime(os.path.join(d, e)) for e in exes] or [0]),
                       'complete': 'play.sh' in files, 'removed_mark': n in marks,
@@ -226,6 +239,12 @@ class Deck:
         if r.returncode != 0:
             raise RuntimeError('the Deck answered with an error: %s' % (r.stderr or r.stdout)[-400:])
         data = json.loads(r.stdout.strip().splitlines()[-1])
+        try:
+            from . import achievements
+            achievements.from_listing(data)
+        except Exception:  # noqa: BLE001 - as conquistas nunca estragam uma listagem
+            import traceback
+            traceback.print_exc()
         # Cada jogo com o seu atalho (o exe do atalho é "<pasta>/play.sh").
         for g in data['games']:
             sc = next((s for s in data['shortcuts']

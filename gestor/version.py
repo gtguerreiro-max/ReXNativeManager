@@ -8,10 +8,19 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.14.0'
+VERSION = '1.15.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.15.0', '2026-11-21', [
+        'Achievements: every game\'s Xbox 360 achievements, with the ones you unlocked. The ReXGlue SDK '
+        'already saved them when a game gave one, but its notification does not show with the native '
+        'renderer, so nobody saw them. The list, texts and icons come from the game itself (its SPA); '
+        'the unlocked ones from the Deck (read with the listing the Manager already does) and from '
+        'playing on this PC. On the PC: the game page, tab Achievements. In Deck mode: the game sheet '
+        'shows "2 of 45 · 30 of 1000 G" and an Achievements button, and opening the Manager after '
+        'playing names the new ones. Secret achievements stay hidden until unlocked.',
+    ]),
     ('1.14.0', '2026-11-21', [
         'A request that waits says what for: builds and Claude fixes run one at a time on the PC, so a '
         'report or install made while another one runs now shows "Waiting for the PC to finish Report: '
