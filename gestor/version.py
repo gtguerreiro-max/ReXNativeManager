@@ -8,10 +8,16 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.21.1'
+VERSION = '1.22.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.22.0', '2026-11-21', [
+        'Delete a game from this PC: on the game page, This PC copy, Delete from this PC. It removes the '
+        'prepared and built game folder (its size is shown first), after a copy of the saves of this PC in '
+        'backups/pc, and the downloaded file when you tick it. Your own dumps are never touched, the copy on '
+        'the Deck stays as it is, and it refuses while the game is open or has jobs.',
+    ]),
     ('1.21.1', '2026-11-21', [
         'The windows of the Manager tests say so in their title (for example "Blur - ReXNative Manager test '
         '(boot test): please do not play in this window"): the boot tests, the classic runs, the test '

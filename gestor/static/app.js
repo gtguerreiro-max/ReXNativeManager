@@ -575,7 +575,33 @@ function gameSummary(g) {
     <button class="b p" onclick="deckInstall()" ${g.built ? '' : 'disabled'}>${g.deck ? 'Reinstall' : 'Install'} (with test)</button>
     <button class="b" onclick="deckResend(false)" ${g.built && g.deck ? '' : 'disabled'}>Resend files</button>
   </div>
-  <p class="muted small">Install closes Steam on the Deck for a moment to add the shortcut and art, then starts the game to test it. Resend sends only what changed (settings, executable).</p>`;
+  <p class="muted small">Install closes Steam on the Deck for a moment to add the shortcut and art, then starts the game to test it. Resend sends only what changed (settings, executable).</p>
+  <h3>This PC's copy</h3>
+  <div class="row"><button class="b d" onclick="pcDeleteDialog('${esc(g.slug)}')">Delete from this PC…</button>
+    <span class="small muted">frees the disk: the prepared and built game, and the download if you want; the Deck's copy stays</span></div>`;
+}
+
+// Apagar o jogo deste PC: a pasta de trabalho, os saves numa cópia antes, o download se se quiser.
+async function pcDeleteDialog(slug) {
+  let d;
+  try { d = await api(`/api/games/${encodeURIComponent(slug)}/disk`); } catch (e) { return fail(e); }
+  if (d.running) return toast('The game is open on this PC: close it first', true);
+  if (d.busy && d.busy.length) return toast('The game has jobs queued or running: ' + d.busy.join(', '), true);
+  const title = (cur && cur.slug === slug && cur.title) || slug;
+  const ok = await confirmBox(`<h3 style="margin-top:0">Delete ${esc(title)} from this PC?</h3>
+    <p>The game folder goes (<b>${gb(d.work_bytes)}</b>): the prepared and built game, its PC settings, test scenes and test results. It cannot be undone: to play it here or update the Deck again, it is prepared again (about 5 to 20 minutes, more for big games).</p>
+    <p class="small muted">${esc(d.work)}</p>
+    ${d.saves ? `<label style="display:block;margin:6px 0"><input type="checkbox" id="pcdsaves" checked> Keep a copy of this PC's saves first (${d.saves} save folder(s), in backups\\pc)</label>` : '<p class="small muted">No saves of this PC.</p>'}
+    ${d.download ? `<label style="display:block;margin:6px 0"><input type="checkbox" id="pcddl"> Also delete the downloaded file (<b>${gb(d.download.bytes)}</b>): preparing it again would download it again</label>` : ''}
+    ${d.on_deck ? '<p class="small">It stays on the Deck as it is, playable; only its updates from this PC stop until it is prepared again.</p>' : ''}`, 'Delete', true);
+  if (!ok) return;
+  const body = { backup_saves: !!($('#pcdsaves') && $('#pcdsaves').checked), download: !!($('#pcddl') && $('#pcddl').checked) };
+  try {
+    await api(`/api/games/${encodeURIComponent(slug)}/delete`, { body });
+    toast(`Deleting ${title} from this PC (follow it in Jobs)`);
+    closeDrawer();
+    setTimeout(loadGames, 4000);
+  } catch (e) { fail(e); }
 }
 
 // -- comparação, relatórios e renderizador ----------------------------------------------------------

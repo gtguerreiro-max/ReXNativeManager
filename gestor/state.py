@@ -65,5 +65,18 @@ def update(section, key, values):
         return copy.deepcopy(cur)
 
 
+def remove(section, key):
+    """Tira o registo key da secção (nada se não existir)."""
+    with _lock:
+        data = copy.deepcopy(_read())
+        if key not in data.get(section, {}):
+            return False
+        del data[section][key]
+        p = _path()
+        fsutil.write_json(p, data, indent=1)
+        _cache.update(sig=(p,) + (_sig(p) or (None,)), data=data)
+        return True
+
+
 def game_key(work):
     return os.path.normcase(os.path.abspath(work))

@@ -47,6 +47,9 @@ couch with the controller.
 - **Play:** on this PC (the game page, or the Play button on each card) or on the Deck through its
   Steam, from the PC or from Deck mode. On the PC, a controller or the keyboard (Enter Start, Space A,
   W A S D move, arrows look); the Manager says when no controller is connected.
+- **Free the PC:** Delete from this PC (the game page, at the end) removes the game's prepared and
+  built folder, after a copy of this PC's saves (backups\pc), and the downloaded file if you tick it;
+  your own dumps are never touched, and the Deck's copy stays as it is.
 - **Steam Deck:** install (internal storage or microSD), update, delete with a backup of the saves,
   per-game settings, the Steam artwork, the library shortcuts.
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your

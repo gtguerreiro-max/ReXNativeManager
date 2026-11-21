@@ -14,7 +14,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (achievements, agents, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
+from . import (achievements, agents, pcdelete, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
                games, github, info, jobs, lan, linuxbuild, orders, owngames, pipeline, rexlog, rexrepo, saves,
                scenes, sdk, state, tunings, versions, xna)
 
@@ -1078,6 +1078,41 @@ def list_jobs(game: str = None):
 
 CLEAR = {'failed': ('failed', 'cancelled', 'interrupted'),
          'finished': ('failed', 'cancelled', 'interrupted', 'ok')}
+
+
+# -- apagar um jogo deste PC ------------------------------------------------------------------------
+@app.get('/api/games/{slug}/disk')
+def game_disk(slug: str):
+    """O que apagar o jogo deste PC liberta (a pasta, o download) e o que se guarda antes (saves)."""
+    w = _work(slug)
+    name = games.exe_name(w)
+    d = pcdelete.disk(w)
+    d['running'] = bool(name) and _exe_running(os.path.join(w, 'run', name + '.exe'))
+    d['busy'] = [j.title for j in manager.active(game=slug)]
+    d['on_deck'] = any(g.get('slug') == slug for g in (state.get('deck', 'last') or {}).get('games') or [])
+    return d
+
+
+@app.post('/api/games/{slug}/delete')
+def game_delete(slug: str, body: dict = Body(default={})):
+    """Apaga o jogo deste PC (numa tarefa: são GB). Recusa com o jogo aberto ou com tarefas dele."""
+    w = _work(slug)
+    try:
+        pcdelete.check_work(w)
+    except RuntimeError as e:
+        raise HTTPException(400, str(e))
+    name = games.exe_name(w)
+    if name and _exe_running(os.path.join(w, 'run', name + '.exe')):
+        raise HTTPException(409, 'the game is open on this PC: close it first')
+    busy = manager.active(game=slug)
+    if busy:
+        raise HTTPException(409, 'the game has jobs queued or running (%s): wait for them or cancel them'
+                                 % ', '.join(j.title for j in busy[:3]))
+    title = games.info(w).get('title') or slug
+    backup, download = bool(body.get('backup_saves', True)), bool(body.get('download', False))
+    return _job(manager.submit('pc-delete', 'Delete from this PC: %s' % title,
+                               lambda job: pcdelete.delete_job(job, w, slug, backup, download),
+                               lane='quick', game=slug, params={'download': download}))
 
 
 @app.post('/api/jobs/clear')
