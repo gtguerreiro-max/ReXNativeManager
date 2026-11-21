@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.17.1'
+VERSION = '1.17.2'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.17.2', '2026-11-21', [
+        'Downloads that got slow after the network went down recover: the download measures its speed and, '
+        'when it falls far below what it had (or under 0.6 MB/s), opens a new connection from where it is, '
+        'often to another server of the Internet Archive. Before, a connection left slow went on at a tenth '
+        'of the speed to the end. When new connections are no faster three times in a row, the line is just '
+        'slow and it stops trying.',
+    ]),
     ('1.17.1', '2026-11-21', [
         'Reports with a snapshot: what Claude is told now opens with the snapshot, beside your description '
         '(its picture first, then its trace), and its first step is to play that trace on the PC and set it '
