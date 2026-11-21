@@ -8,10 +8,23 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.15.0'
+VERSION = '1.16.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.16.0', '2026-11-21', [
+        'Reports, faster: what Claude is told when it investigates a report was rewritten from where the '
+        'last reports spent their time (up to an hour: reaching the place again after every rebuild, '
+        'minutes of blind waiting, searching the recompiled game). Now it reaches the place once, records '
+        'a frame trace there at once and, after each rebuild, plays that trace (about 20 s) instead of '
+        'reaching the place again; it sorts the fault with the new ReXNative tools (the Xenos renderer at '
+        'the same spot, Oracle, compare, audit, idle, RenderDoc summary) before reading code, and gets '
+        'the game\'s test scenes to play at once.',
+        'The old comparison of captures at 15/30/45/60 s (intros) is no longer in a report: it misled one '
+        '(The Bureau\'s "scrambled subtitle" was the game\'s own animation).',
+        'Claude\'s live game has a state folder of its own: another session\'s game is never in its way, '
+        'and the app closes the one it left running.',
+    ]),
     ('1.15.0', '2026-11-21', [
         'Achievements: every game\'s Xbox 360 achievements, with the ones you unlocked. The ReXGlue SDK '
         'already saved them when a game gave one, but its notification does not show with the native '

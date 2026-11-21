@@ -135,9 +135,21 @@ From download to the Steam Deck:
    one there counts as worse (the fallback would hide what the change broke).
    **Report a problem** on each game: the type (graphics in native, crashes, slow, sound...), where
    (PC, Deck), what you see and the captures that show it; Claude (the strong model) investigates
-   with the game running (`live.ps1`: renderer captures, comparing with the classic one,
-   RenderDoc), fixes, builds, and the game is tested again. Until there is a fix, a button puts
-   the game on the classic renderer (PC or Deck).
+   with the game running, fixes, builds, and the game is tested again. Until there is a fix, a
+   button puts the game on the classic renderer (PC or Deck).
+   The instructions it gets (`claude.REPORT_PROMPT`) are about spending its time well, measured on
+   the reports so far (where an hour went: reaching the place again after every rebuild, waiting
+   minutes blind, searching the recompiled game's code). It reaches the place once (with the
+   player's save, pad routes), records a frame trace there at once (`live.ps1 record`), and after
+   each rebuild plays that trace (`live.ps1 play`, about 20 s) instead of reaching the place
+   again; the trace is also kept as the game's test scene. It sorts the fault with ReXNative's
+   tools before reading code (the Xenos renderer at the same spot, `-Oracle`, `compare`, `audit`,
+   `idle`, RenderDoc `summary`; the log for sound, crashes and speed), searches the renderer's
+   sources and docs, not the generated code (`watch` names what writes an address), and
+   rebuilds once per idea. It also gets the game's test scenes, to play at once. The assistant's
+   sessions have a `live.ps1` state folder of their own (`REXNATIVE_LIVE_STATE`,
+   `%LOCALAPPDATA%\rexnative-live-manager`): another session's live game is never in their way,
+   and the app closes the game a session left running in either folder.
 5. **Steam Deck**: install (`python -m rexnative deck --steam --try 35`, on internal storage or the
    microSD card), see what is installed and the free space, delete a game (with confirmation and a
    backup of the saves; the Steam shortcut goes too).

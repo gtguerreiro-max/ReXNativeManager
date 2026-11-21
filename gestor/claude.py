@@ -98,9 +98,11 @@ What to do:
    the game builds: `python -m rexnative project "{work}" --build` from the worktree (the
    environment already has the REXNATIVE_* variables), then check it running when you can:
    `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1 start -Dir "{work}\\run" -Exe <name>.exe`,
-   `live.ps1 frame <tag>` (look at the PNG), `live.ps1 log <pattern>`, and `live.ps1 stop` for the
-   game you started (if `live.ps1 status` shows another live game, do not stop it: wait). The app
-   runs the boot test again after you.
+   `live.ps1 frame <tag>` (look at the PNG), `live.ps1 log <pattern>`, and `live.ps1 stop` when
+   done. Your live game has a state folder of its own (REXNATIVE_LIVE_STATE is set): no other
+   session's game is in your way. Starting the game costs minutes: keep one running for the
+   experiments, and for a fault at a place, `live.ps1 record 3` there and `live.ps1 play <trace>`
+   after each rebuild (docs/DEBUGGING.md). The app runs the boot test again after you.
 4. Commit ReXNative changes in the worktree (identity and trailer in the rules below).{push}
 5. End with a SHORT summary in English for the user: the cause, what you
    changed (files, commits) and whether the retry should pass. Start it with "NO FIX:" only
@@ -124,8 +126,16 @@ SHARE = """ Do not push: you cannot publish to ReXNative directly. The app sends
    pull request to ReXNative after the tests pass (keep the commits clean and self-explanatory)."""
 
 
+def live_state_dir():
+    """A pasta de estado do live.ps1 das sessões do assistente desta app: o jogo ao vivo delas é só
+    delas (outras sessões no PC usam a de origem, %LOCALAPPDATA%\\rexnative-live) e nenhuma pára o
+    da outra."""
+    return os.path.join(os.environ.get('LOCALAPPDATA', ''), 'rexnative-live-manager')
+
+
 def _env():
     env = config.tool_env()
+    env['REXNATIVE_LIVE_STATE'] = live_state_dir()
     # Variáveis de uma sessão da app Claude que lançou esta app (não são uma sessão iniciada e
     # confundem o claude.exe filho); a ficha de setup-token e a chave da API ficam.
     for k in list(env):
@@ -250,43 +260,75 @@ The user's report:
 - Where: {where}
 - What they see: {text}
 {captures}{boot}
-How to investigate (the method that works on this project; read docs/DEBUGGING.md and docs/NOTES.md,
-and docs/GAMES.md for similar problems already solved in other games):
-- Keep ONE live game and experiment on it, do not restart it for every experiment:
-  `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1 start -Dir "{run}" -Exe {name}.exe`,
-  then `live.ps1 frame <tag>` (the renderer's own capture, no window focus needed; look at the PNG),
-  `live.ps1 control "renderer stock"` / `control "renderer native"` (ReXGlue's Xenos renderer, to
-  compare: what the game should look like), `live.ps1 debug <mask>` (draw-debug switches, see the
-  script's header), `live.ps1 log <pattern>`, `live.ps1 keys` / pad routes to reach the scene, and
-  `live.ps1 stop` when you are done. RenderDoc: scripts\\rdoc.ps1 (docs/DEBUGGING.md).
-- If another live game is already running (`live.ps1 status`), do not stop it: wait, or say so.
-- A renderer bug gets a general fix in ReXNative (renderer/, rexnative/) that does not break the
-  other games; a problem of this game alone gets the game's own settings or layer files.
-- After a code change: `python -m rexnative project "{work}" --build` from the worktree, then check
-  the picture again with live.ps1 frame. Commit ReXNative changes (identity and trailer in the
-  rules).{push}
-- Try a fix, gated to where it is needed when a general change looks risky for the other games;
-  the user wants an attempt, not "it cannot be done". Start the summary with "NO FIX:" only
-  when no attempt can work now (or the attempts you made and checked failed), saying what you tried.
-  If ReXGlue's renderer draws the game right, also set `[rexnative]` `classic = true` in
-  {run}\\{name}.toml and in {work}\\deck.toml as a workaround until then (the game then starts on the
-  Classic renderer, with the settings HUD) and say so.
-- A test scene of the place: once the game shows the place of the report (with the player's save,
-  when there is one), and before you change anything, record it with
-  `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1 record 3` (it prints the trace's path, a
-  .rxt in {run}\\live\\trace). The app keeps it as a test scene of this game: after your fix it draws
-  its reference pictures with the fixed build, and after every later ReXNative change it draws the
-  same frames again and compares the pixels, so the place stays right. Add one line
-  `SCENE: <that path>` per scene (at most 2) after SUSPECTS. Skip it when the place cannot be reached.
+Work fast. The time goes into starting the game (logos, intros, loading the save: minutes) and
+into rebuilds (minutes each); an experiment on a running game or on a recorded trace takes
+seconds. Aim for a fix checked on the PC within about {aim} minutes (the app stops you after
+{limit}). Below, `live.ps1` is `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1`. Your live
+game has a state folder of its own (REXNATIVE_LIVE_STATE is set for you): no other session's game
+is in your way, and you never stop someone else's.
+
+1. Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."`
+   (`pad:` presses the game's own pad, no window focus needed; `<s>:hold:ENTER:150` sends keys).
+   With the player's save, Continue or Load, never a new game. Wait in short steps
+   (`Start-Sleep 20`, then `live.ps1 frame <tag>` and look at the PNG), never minutes blind.
+2. Record it at once, before changing anything: `live.ps1 record 3` prints a frame trace (a .rxt
+   in {run}\\live\\trace). It is your fast loop: after a rebuild,
+   `live.ps1 play "<trace>" -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
+   draws those frames with the new build and exits in about 20 s (the images:
+   {run}\\live\\cap\\f<i>-native.png, from the second time through), with no game to reach again.
+   It is also this game's test scene: add a line `SCENE: <trace path>` after SUSPECTS (at most 2);
+   the app then checks that place after every later ReXNative change. If `play` says the trace no
+   longer fits the build ("record it again"), reach the place live once more and record again.
+   Skip the trace only when the place cannot be reached.
+3. Sort the fault before reading code (seconds each, on the live game; docs/DEBUGGING.md has the
+   whole table):
+   - Is it ReXNative's renderer? `live.ps1 control "renderer stock"`, `frame`, then
+     `control "renderer native"`: ReXGlue's Xenos renderer at the same spot. Wrong there too: not
+     ReXNative's renderer (the game's settings or layer, the SDK, the game itself). Right there:
+     a ReXNative renderer fault.
+   - Which pass goes wrong first: start with `-Oracle`, then `live.ps1 oracle` prints the first
+     resolve that differs from the Xenos plugin's, in the same frame.
+   - Only now and then, or only in motion: `play` the trace. Wrong in the replay: the data or the
+     way it is drawn. Right in the replay: timing, or state kept from earlier frames: `record 1`
+     at the fault, `play`, then `compare` names the first resolve apart; `audit` lists textures
+     whose guest memory changed unseen; `idle` drops stale resolved images (a fault that goes
+     with them was one).
+   - Which draw, or what made a pixel: `debug "<mask> 0 <from> <to>"` skips a range of draws,
+     `snap`, `drawlog`; RenderDoc: start with `-RenderDoc`, `live.ps1 capture`, then
+     `scripts\\rdoc.ps1 summary <capture>`, `history -X -Y`, `inputs -Event` (delete the .rdc
+     files when done: gigabytes each).
+   - Not a picture (sound, controls, a crash, a freeze, slowness): the log first,
+     `live.ps1 log "<pattern>"`: `ReXNative audio:` lines (underruns, channels), `the fault was
+     caught` (address and code offset), the frame statistics, the SDK's crash report.
+4. Search where it is small: renderer/, rexnative/ and docs/ (docs/GAMES.md: similar problems
+   already fixed in other games; docs/NOTES.md is long: list its headings first,
+   `Select-String '^#' docs\\NOTES.md`). Do not grep the recompiled game (generated\\, hundreds of
+   MB) to find what writes some memory: `live.ps1 control "watch <address> any"` logs the
+   recompiled functions that write that guest dword (`watch off` after), and `peek` / `poke`
+   read and write guest memory live.
+5. Fix it where it belongs: a renderer fault gets a general fix in ReXNative (renderer/,
+   rexnative/), gated to where it is needed when it could change other games; a problem of this
+   game alone gets the game's own settings or layer files. Make all the edits of one idea, then
+   ONE rebuild: `live.ps1 stop` (the executable is locked while it runs),
+   `python -m rexnative project "{work}" --build`, `play` your trace to see the result, and a last
+   look in the live game at the place. Commit ReXNative changes (identity and trailer in the
+   rules).{push}
+6. Try a fix: the user wants an attempt, not "it cannot be done". Start the summary with
+   "NO FIX:" only when no attempt can work now (or the attempts you made and checked failed),
+   saying what you tried. If ReXGlue's renderer draws it right and ReXNative's could not be
+   fixed, also set `[rexnative]` `classic = true` in {run}\\{name}.toml and in {work}\\deck.toml as
+   a workaround (the game then starts on the Classic renderer, with the settings HUD), and say so.
+7. `live.ps1 stop` when you are done.
 
 End with a SHORT summary in English for the user: the cause, what you changed
 (files, commits), and where in the game to check that it is right.
-Finish the summary with these two lines, exactly in this form:
+Finish the summary with these lines, exactly in this form:
 REXNATIVE: <one short sentence: what this changed in ReXNative for every game, or "nothing">
 COMMITS: <the short hashes of the ReXNative commits YOU made (after the push), space-separated, or "none">
 SUSPECTS: <only if you committed ReXNative changes: up to 6 folder names of OTHER prepared games
 (in {work_roots}) that go through the code you changed,
 judged from their logs (run\\logs\\*.log, run\\logs\\live\\*.log) and layers, space-separated; or "none">
+SCENE: <the trace you recorded at the place, one line each, at most 2; leave the line out if none>
 
 {rules}"""
 
@@ -297,6 +339,23 @@ SCENE_LINE = re.compile(r'^\s*SCENE:\s*(.+?)\s*$', re.M)
 def parse_scenes(summary):
     """Os traces que o Claude gravou como cenas de teste ("SCENE: <caminho do .rxt>")."""
     return [m.group(1) for m in SCENE_LINE.finditer(summary or '')]
+
+
+def _scenes_text(slug, run, name):
+    """As cenas de teste do jogo (traces gravados em sítios dele): tocam-se já, sem chegar lá."""
+    from . import scenes
+    out = []
+    for m in scenes.scenes(slug)[-6:]:
+        trace = os.path.join(scenes.scene_dir(slug, m['id']), 'scene.rxt')
+        if os.path.exists(trace):
+            out.append('  %s (%s)%s: %s\n' % (m.get('label') or m['id'], m.get('source') or '?',
+                                               ', recorded by an older build: may need recording again'
+                                               if m.get('stale') else '', trace))
+    if not out:
+        return ''
+    return ('Test scenes of this game, frame traces recorded at places in it (no need to reach them: '
+            '`live.ps1 play "<trace>" -Dir "%s" -Exe %s.exe` draws them with the current build):'
+            '\n%s' % (run, name, ''.join(out)))
 
 
 def investigate(job, work, report):
@@ -315,17 +374,7 @@ def investigate(job, work, report):
                     'log %s%s\n' % (boot.get('at'), boot.get('running'), boot.get('frames') or 0,
                                     boot.get('draws') or 0, boot.get('frame_ms') or 0, boot.get('log'),
                                     (', its capture %s' % boot['shot']) if boot.get('shot') else ''))
-    cmp = g.get('compare') or {}
-    if cmp.get('pairs'):
-        boot_txt += ('Automatic comparison of the two renderers at the same seconds after start (native '
-                     'run vs a run with --rexnative_classic=true, ReXGlue\'s Xenos renderer = the '
-                     'reference): verdict %s - %s\n%s' % (
-                         cmp.get('verdict'), cmp.get('summary'), ''.join(
-                             '  %d s: native %s | reference %s | %s\n' % (
-                                 p['t'], p['native'], p['classic'], p.get('note') or '')
-                             for p in cmp['pairs'])))
-        if cmp.get('sheet'):
-            boot_txt += '  (all pairs side by side: %s)\n' % cmp['sheet']
+    boot_txt += _scenes_text(g['slug'], os.path.join(work, 'run'), name)
     deck_files = report.get('deck_files') or []
     if deck_files or report.get('where') == 'Steam Deck':
         boot_txt += ('Seen on the STEAM DECK (AMD GPU, Proton, its own settings: 1280x800 and the upscaler '
@@ -338,16 +387,19 @@ def investigate(job, work, report):
                 '  %s\n' % f for f in deck_files)
     sv = report.get('saves') or {}
     if sv.get('files'):
-        boot_txt += ("The player's saves from the Deck are in the PC copy now (%s, %d files; the PC's own saves "
-                     "from before are in %s): the game starts with the player's progress. Load it (continue "
-                     "or load, not a new game) to reach the place in the report, which may only open with "
-                     "that progress. Do not delete them.\n" % (sv.get('run'), sv['files'],
-                                                              sv.get('backup') or 'none (it had none)'))
+        boot_txt += ("The player's saves from the Deck are in the PC copy now (%s, %d files; %s): the game "
+                     "starts with the player's progress. Load it (continue or load, not a new game) to reach "
+                     "the place in the report, which may only open with that progress. Do not delete them.\n"
+                     % (sv.get('run'), sv['files'],
+                        "the PC's own saves from before are in %s" % sv['backup'] if sv.get('backup')
+                        else 'the PC had no saves of its own'))
     deck_log = os.path.join(work, 'deck', 'try.log')
     if os.path.exists(deck_log):
         boot_txt += 'Last try on the Steam Deck: log %s (captures in %s)\n' % (
             deck_log, os.path.join(work, 'deck'))
+    limit = int(float(cfg.get('claude_timeout_min') or 120))
     prompt = REPORT_PROMPT.format(
+        aim=max(15, min(45, limit // 2)), limit='%d minutes' % limit,
         title=g['title'], slug=g['slug'], work=work, run=os.path.join(work, 'run'), name=name,
         rexnative_dir=rex, kind=report.get('kind', '-'), where=report.get('where', '-'),
         text=report.get('text', '').strip() or '-', captures=captures, boot=boot_txt,

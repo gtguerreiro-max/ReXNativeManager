@@ -87,18 +87,21 @@ def _cmdline(cmd):
 
 
 # -- teste de arranque (scripts/live.ps1) --------------------------------------------------------
-def _live(args, timeout=90):
+def _live(args, timeout=90, state_dir=None):
     cfg = config.load()
     script = os.path.join(cfg['rexnative_dir'], 'scripts', 'live.ps1')
+    env = config.tool_env()
+    if state_dir:
+        env['REXNATIVE_LIVE_STATE'] = state_dir
     r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script]
                        + [str(a) for a in args], capture_output=True, text=True, encoding='utf-8',
-                       errors='replace', timeout=timeout, env=config.tool_env(),
+                       errors='replace', timeout=timeout, env=env,
                        creationflags=jobs.CREATE_NO_WINDOW)
     return r.returncode, (r.stdout + r.stderr).strip()
 
 
-def _live_state():
-    p = os.path.join(os.environ.get('LOCALAPPDATA', ''), 'rexnative-live', 'state.json')
+def _live_state(state_dir=None):
+    p = os.path.join(state_dir or os.path.join(os.environ.get('LOCALAPPDATA', ''), 'rexnative-live'), 'state.json')
     try:
         return json.load(open(p, encoding='utf-8-sig'))
     except (OSError, ValueError):
@@ -122,8 +125,8 @@ def pid_alive(pid):
     return bool(ok) and code.value == 259  # STILL_ACTIVE
 
 
-def _live_running():
-    s = _live_state()
+def _live_running(state_dir=None):
+    s = _live_state(state_dir)
     if not s or not pid_alive(s.get('pid', 0)):
         return None
     # O state.json fica para trás quando o jogo fecha: um PID reaproveitado por outro programa não
@@ -141,17 +144,20 @@ def _live_running():
 
 def stop_leftover_live(job, work):
     """Uma sessão do Claude pode deixar aberto o jogo que arrancou com live.ps1 (e cancelá-la não
-    o fecha): o jogo ao vivo desta pasta fecha-se, para não ocupar os testes seguintes."""
-    s = _live_running()
-    if not s or not s.get('dir'):
-        return
-    d, w = os.path.normcase(os.path.abspath(s['dir'])), os.path.normcase(os.path.abspath(work))
-    if d == w or d.startswith(w + os.sep):
-        try:
-            _live(['stop', '-Dir', s['dir']], timeout=60)
-            job.event('info', 'Closed the game Claude left running (%s)' % os.path.basename(s.get('exe') or ''))
-        except (subprocess.SubprocessError, OSError) as e:
-            job.log('could not close the live game: %s' % e)
+    o fecha): o jogo ao vivo desta pasta fecha-se, para não ocupar os testes seguintes. Na pasta de
+    estado das sessões do assistente (claude.live_state_dir) e na de origem."""
+    from . import claude
+    for state_dir in (claude.live_state_dir(), None):
+        s = _live_running(state_dir)
+        if not s or not s.get('dir'):
+            continue
+        d, w = os.path.normcase(os.path.abspath(s['dir'])), os.path.normcase(os.path.abspath(work))
+        if d == w or d.startswith(w + os.sep):
+            try:
+                _live(['stop', '-Dir', s['dir']], timeout=60, state_dir=state_dir)
+                job.event('info', 'Closed the game Claude left running (%s)' % os.path.basename(s.get('exe') or ''))
+            except (subprocess.SubprocessError, OSError) as e:
+                job.log('could not close the live game: %s' % e)
 
 
 def _game_log(run, since):
