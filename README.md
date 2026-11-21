@@ -379,7 +379,13 @@ waits for a sleeping Deck give their turn back and pick up where they were. The 
 the app is closed with jobs queued (the job that was running is marked interrupted).
 
 Jobs run in lanes: downloads in parallel (`max_downloads`), builds and tests one at a time (the
-build lane), reports one at a time in a lane of their own, Deck transfers one at a time. A report
+build lane), reports one at a time in a lane of their own, new games one at a time in the prepare
+lane, Deck transfers one at a time. A pipeline that starts from an archive (Prepare: extraction,
+code generation, the first builds, mostly processor work at low priority, 5 to 20 minutes and
+sometimes much more) runs in the prepare lane, in a third copy of ReXNative
+(`prepare_rexnative_dir`, by default the app's copy with `-prepare`), with its tests and fix
+sessions, so the builds, tests and reports of the games already prepared do not wait for it
+(`prepare_lane` off puts it back in the build lane). A report
 is investigated beside whatever the build lane does, in a second copy of ReXNative that only
 reports use (`report_rexnative_dir`, by default the app's copy with `-reports`, a git worktree made
 the first time) and with its own live game. Only one job at a time builds or tests a given game,

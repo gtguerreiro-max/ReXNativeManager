@@ -40,6 +40,11 @@ DEFAULTS = {
     # Off: reports wait their turn in the build lane, as before 1.18.
     'report_lane': True,
     'report_rexnative_dir': '',
+    # The same for new games: a pipeline that starts with Prepare (an archive to a built game) runs
+    # in the prepare lane, in a third copy (empty: rexnative_dir + '-prepare'), beside the builds and
+    # tests of the games already prepared. Off: it waits its turn in the build lane, as before 1.20.
+    'prepare_lane': True,
+    'prepare_rexnative_dir': '',
     'python': '',  # vazio: o Python que corre a app
     # As ferramentas do ReXNative (o SDK do ReXGlue instalado, o LLVM, os SDKs opcionais): cada um
     # aponta para as suas nas Definições.

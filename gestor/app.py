@@ -190,14 +190,15 @@ def _submit_pipeline(title, source=None, work=None, steps=None, after_deck=None)
     with _submit_lock:
         for j in manager.active(kind='pipeline', game=slug):
             raise HTTPException(409, 'there is already a job for %s (%s)' % (slug, j.id))
-        return manager.submit('pipeline', title, _pipeline_fn(source, work, steps, after_deck), lane='build',
-                              game=slug, params={'source': source, 'work': work, 'steps': steps,
-                                                 'after_deck': after_deck})
+        return manager.submit('pipeline', title, _pipeline_fn(source, work, steps, after_deck),
+                              lane=pipeline.pipeline_lane(source), game=slug,
+                              params={'source': source, 'work': work, 'steps': steps, 'after_deck': after_deck})
 
 
 def _pipeline_fn(source, work, steps, after_deck=None):
     def fn(job):
-        res = pipeline.run(job, source=source, work=work, steps=steps)
+        with pipeline.lane_settings(job):  # the prepare lane works in its own copy of ReXNative
+            res = pipeline.run(job, source=source, work=work, steps=steps)
         if after_deck:
             _submit_deck(res['work'], **after_deck)
         return res
@@ -1421,7 +1422,7 @@ def _pc_work():
     """What the PC is doing now, for Deck mode's Requests: the jobs running in the build lane and in
     the report lane (title, kind, for how long), how many wait there, and a pending restart."""
     import datetime
-    lanes = ('build', 'report')
+    lanes = ('build', 'report', 'prepare')
     js = [j for j in manager.list(limit=1000) if j.lane in lanes and j.status in ('running', 'queued')]
     running = []
     for j in sorted((j for j in js if j.status == 'running'), key=lambda x: x.started or ''):
@@ -2514,7 +2515,7 @@ RECIPES = {'pipeline': _r_pipeline, 'report': _r_report, 'batch': _r_batch, 'dow
            'deck': _r_deck, 'order': _r_order, 'deck-report': _r_deck_report, 'deck-batch': _r_deck_batch,
            'sync': lambda j: (lambda job: rexrepo.sync(job))}
 # The self-test of the fix loop is a 'pipeline' in the quick lane: not one of these.
-RECIPES['pipeline'] = lambda j, make=_r_pipeline: make(j) if j.lane == 'build' else None
+RECIPES['pipeline'] = lambda j, make=_r_pipeline: make(j) if j.lane in ('build', 'prepare') else None
 _resumed = manager.resume(RECIPES)
 if _resumed:
     print('%d job(s) back in the queue after the restart' % _resumed)

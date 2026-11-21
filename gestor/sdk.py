@@ -135,7 +135,7 @@ def update_job(job):
     dos relatórios parada enquanto dura: nenhum jogo compila ao mesmo tempo)."""
     if jobs.Job.manager is None:
         return _update_job(job)
-    with jobs.Job.manager.alone(job, ('report',)):
+    with jobs.Job.manager.alone(job, ('report', 'prepare')):
         return _update_job(job)
 
 

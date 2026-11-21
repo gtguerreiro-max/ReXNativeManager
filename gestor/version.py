@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.19.1'
+VERSION = '1.20.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.20.0', '2026-11-21', [
+        'New games are prepared in a lane of their own, beside the builds. A pipeline that starts from an '
+        'archive (Prepare: extraction, code generation, the first builds, then its tests and any fixes) runs '
+        'in the prepare lane, in a third copy of ReXNative that only it uses (made the first time, named '
+        '...-prepare). The builds, tests and reports of the games you already have no longer wait for it: '
+        'one prepare of 98 minutes had held 5 pipelines, 2 reports and a batch. New games still go one at a '
+        'time, only one game is on the test bench at a time, and an SDK update waits for the lane and keeps '
+        'it closed. Settings: prepare_lane (off puts new games back in the build lane).',
+        'Deck mode and the Decky data say what the prepare lane is doing too (what the PC is working on).',
+    ]),
     ('1.19.1', '2026-11-21', [
         'Deck mode: while the assistant fixes a step, the strip of the request in progress says so in a few '
         'words instead of showing the command it is running (the details stay in Requests).',

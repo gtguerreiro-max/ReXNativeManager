@@ -149,6 +149,67 @@ check('an override is this thread\'s only, and ends with the block',
       config.load()['rexnative_dir'] == os.path.join(TMP, 'rex') and
       config.stored()['rexnative_dir'] == os.path.join(TMP, 'rex'))
 
+# 5b. A lane with its own copy of ReXNative: made on first use, and the job's settings point at it.
+import subprocess  # noqa: E402
+from gestor import rexrepo  # noqa: E402
+
+
+def git(args, cwd):
+    return subprocess.run(['git', '-c', 'user.name=test', '-c', 'user.email=test@example.invalid'] + args, cwd=cwd,
+                          capture_output=True, text=True).returncode
+
+
+origin, rex = os.path.join(TMP, 'origin'), os.path.join(TMP, 'rex')
+os.makedirs(os.path.join(origin, 'rexnative'))
+open(os.path.join(origin, 'rexnative', '__init__.py'), 'w').close()
+git(['init', '-q', '-b', 'main'], origin)
+git(['add', '-A'], origin)
+git(['commit', '-q', '-m', 'first'], origin)
+git(['clone', '-q', origin, rex], TMP)
+git(['config', 'user.name', 'test'], rex)  # the copies share it: a cherry-pick commits
+git(['config', 'user.email', 'test@example.invalid'], rex)
+open(os.path.join(rex, 'ports.json'), 'w').write('{}')
+check('a new game goes to the prepare lane, a build of a prepared one to the build lane',
+      pipeline.pipeline_lane('some.rar') == 'prepare' and pipeline.pipeline_lane(None) == 'build')
+seen = {}
+
+
+def in_lane(job):
+    with pipeline.lane_settings(job):
+        seen[job.lane] = (config.load()['rexnative_dir'], config.get('claude_live_state'))
+        time.sleep(0.4)
+
+
+jp = m.submit('other', 'P', in_lane, lane='prepare')
+jr = m.submit('other', 'Rp', in_lane, lane='report')
+jb = m.submit('other', 'B', in_lane, lane='build')
+check('prepare, report and build lanes run side by side', wait(lambda: all(j.status == 'running' for j in (jp, jr, jb)), 5))
+wait(lambda: all(j.status in ('ok', 'failed') for j in (jp, jr, jb)), 20)
+check('each lane with a copy works in it, and the copies were made (%s)' % (jp.error or jr.error or 'ok'),
+      seen.get('prepare') == (rex + '-prepare', 'rexnative-live-manager-prepare') and
+      seen.get('report') == (rex + '-reports', 'rexnative-live-manager-reports') and
+      seen.get('build') == (rex, None) and
+      os.path.isfile(os.path.join(rex + '-prepare', 'rexnative', '__init__.py')) and
+      os.path.isfile(os.path.join(rex + '-prepare', 'ports.json')))
+check('the copies know each other', sorted(os.path.basename(c) for c in rexrepo._other_copies(rex)) == ['rex-prepare', 'rex-reports'])
+open(os.path.join(rex + '-prepare', 'rexnative', 'fix.py'), 'w').write('x = 1')
+git(['add', 'rexnative/fix.py'], rex + '-prepare')  # not ports.json: the real repository ignores it
+git(['commit', '-q', '-m', 'a fix not published'], rex + '-prepare')
+said = []
+rexrepo._take_unpublished(rex, lambda kind, text: said.append(text))
+check('a commit not published in one copy is brought to another (%s)' % (said[:1] or ['nothing said'])[0][-90:],
+      os.path.isfile(os.path.join(rex, 'rexnative', 'fix.py')))
+with config.override():
+    pass
+cfg_off = dict(config.stored(), prepare_lane=False)
+json.dump({k: v for k, v in cfg_off.items() if k in ('data_dir', 'rexnative_dir', 'prepare_lane')},
+          open(os.environ['GESTOR_CONFIG'], 'w', encoding='utf-8'))
+config._cache = None
+check('with the prepare lane off a new game waits in the build lane', pipeline.pipeline_lane('some.rar') == 'build')
+json.dump({'data_dir': cfg_off['data_dir'], 'rexnative_dir': cfg_off['rexnative_dir']},
+          open(os.environ['GESTOR_CONFIG'], 'w', encoding='utf-8'))
+config._cache = None
+
 # 6. A restart: waits for what runs and for what could not continue; the rest stays queued.
 del ran[:]
 run1 = m.submit('slow', 'running', sleeper('running', 1.0), lane='build', params={'name': 'running', 'seconds': 1.0})

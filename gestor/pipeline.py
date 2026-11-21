@@ -1039,6 +1039,35 @@ def report_lane():
     return 'report' if rexrepo.report_dir() else 'build'
 
 
+def pipeline_lane(source):
+    """Where a pipeline runs: one that starts from an archive (a new game: Prepare, long and mostly
+    processor work at low priority) in the prepare lane, with its own copy of ReXNative, beside the
+    builds and tests of the games already prepared; the others, and all of them when that lane is
+    off, in the build lane."""
+    return 'prepare' if source and rexrepo.lane_dir('prepare') else 'build'
+
+
+class lane_settings:
+    """The settings of the job's lane, for the code inside the `with`: a lane with its own copy of
+    ReXNative (rexrepo.LANE_COPY: report, prepare) works in it, made on first use, and keeps its
+    own live game; the build lane and the others use the app's. Per thread (config.override)."""
+
+    def __init__(self, job):
+        self.job, self.over = job, None
+
+    def __enter__(self):
+        lane = self.job.lane
+        if rexrepo.lane_dir(lane):
+            d = rexrepo.ensure_lane_dir(lane)
+            self.over = config.override(rexnative_dir=d, claude_live_state=rexrepo.LANE_COPY[lane][3])
+            self.over.__enter__()
+        return self
+
+    def __exit__(self, *exc):
+        if self.over is not None:
+            self.over.__exit__(*exc)
+
+
 def _auto_report(job, work, slug, label, kind_where, text, caps, said):
     """Guarda um relatório automático e põe na fila a tarefa que o manda ao Claude (modelo forte).
     label: o que vai no título da tarefa; kind_where: (tipo, onde); said: o aviso na tarefa atual."""
@@ -1281,17 +1310,16 @@ def report_job(job, work, report_id):
     (lane 'report') tudo isto corre na cópia do ReXNative dos relatórios, com o seu jogo ao vivo, ao
     lado do que a pista das compilações estiver a fazer; o jogo é só desta tarefa enquanto dura."""
     slug = (state.get('reports', report_id) or {}).get('slug') or os.path.basename(work)
-    if job.lane != 'report':
-        with game_turn(job, slug):
-            return _report_job(job, work, report_id)
     try:
-        d = rexrepo.ensure_report_dir()
+        settings = lane_settings(job).__enter__()
     except Exception as e:
         state.update('reports', report_id, {'status': 'failed'})
         raise RuntimeError(str(e))
-    with config.override(rexnative_dir=d, claude_live_state='rexnative-live-manager-reports'):
+    try:
         with game_turn(job, slug):
             return _report_job(job, work, report_id)
+    finally:
+        settings.__exit__(None, None, None)
 
 
 def _report_job(job, work, report_id):

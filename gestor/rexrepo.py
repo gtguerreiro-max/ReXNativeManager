@@ -56,19 +56,34 @@ def web_url(remote):
     return r[:-4] if r.endswith('.git') else r
 
 
-def report_dir():
-    """The second copy of ReXNative, the report lane's (config report_lane), or None when reports
-    run in the build lane."""
+# The lanes that work beside the build lane, each in a copy of ReXNative only it uses (a job there
+# never sees what a fix session of another lane has half written, nor a main that changes under
+# it): lane -> (the setting that turns it on, the setting with its folder, the folder's ending by
+# default, the live.ps1 state folder of its assistant sessions).
+LANE_COPY = {
+    'report': ('report_lane', 'report_rexnative_dir', '-reports', 'rexnative-live-manager-reports'),
+    'prepare': ('prepare_lane', 'prepare_rexnative_dir', '-prepare', 'rexnative-live-manager-prepare'),
+}
+
+
+def lane_dir(lane):
+    """The copy of ReXNative of this lane, or None when the lane is off (its jobs then run in the
+    build lane) or is not one with a copy."""
+    spec = LANE_COPY.get(lane)
     cfg = config.stored()
-    if not cfg.get('report_lane', True):
+    if not spec or not cfg.get(spec[0], True):
         return None
-    return cfg.get('report_rexnative_dir') or (cfg['rexnative_dir'].rstrip('\\/') + '-reports')
+    return cfg.get(spec[1]) or (cfg['rexnative_dir'].rstrip('\\/') + spec[2])
 
 
-def ensure_report_dir():
-    """Makes the report lane's copy the first time: a worktree of the app's ReXNative repository,
-    detached at the published main, with the app's ports.json (not in git). Returns its folder."""
-    d, base = report_dir(), config.stored()['rexnative_dir']
+def report_dir():
+    return lane_dir('report')
+
+
+def ensure_lane_dir(lane):
+    """Makes the lane's copy the first time: a worktree of the app's ReXNative repository, detached
+    at the published main, with the app's ports.json (not in git). Returns its folder."""
+    d, base = lane_dir(lane), config.stored()['rexnative_dir']
     if not os.path.isdir(os.path.join(d, 'rexnative')):
         if not os.path.isdir(base):
             raise RuntimeError('no ReXNative copy yet (%s): build a game first' % base)
@@ -76,9 +91,9 @@ def ensure_report_dir():
         _git(['worktree', 'prune'], base)
         rc, _, err = _git(['worktree', 'add', '--detach', d, 'origin/main'], base, timeout=600)
         if rc != 0:
-            raise RuntimeError('could not make the reports\' copy of ReXNative (%s): %s. Reports can '
-                               'run in the build lane instead: Settings, "report_lane" off'
-                               % (d, err[-300:]))
+            raise RuntimeError('could not make the %s lane\'s copy of ReXNative (%s): %s. Its jobs can '
+                               'run in the build lane instead: Settings, "%s" off'
+                               % (lane, d, err[-300:], LANE_COPY[lane][0]))
     src, dst = os.path.join(base, 'ports.json'), os.path.join(d, 'ports.json')
     try:
         if os.path.exists(src) and (not os.path.exists(dst) or os.path.getmtime(src) > os.path.getmtime(dst)):
@@ -89,41 +104,40 @@ def ensure_report_dir():
     return d
 
 
+def ensure_report_dir():
+    return ensure_lane_dir('report')
+
+
 def _same(a, b):
     return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
 
 
-def _other_copy(d):
-    """The other lane's copy of ReXNative (the app's for the reports' one and the other way round),
-    or None."""
-    a, b = config.stored()['rexnative_dir'], report_dir()
-    if not b or not os.path.exists(os.path.join(a, '.git')) or not os.path.exists(os.path.join(b, '.git')):
-        return None
-    return b if _same(d, a) else a if _same(d, b) else None
+def _other_copies(d):
+    """The copies of ReXNative of the other lanes (the app's own and each lane's that exists)."""
+    all_ = [config.stored()['rexnative_dir']] + [lane_dir(lane) for lane in LANE_COPY]
+    return [c for c in all_ if c and os.path.exists(os.path.join(c, '.git')) and not _same(c, d)]
 
 
 def _take_unpublished(d, log):
-    """Commits the assistant made in the other lane's copy and could not publish (someone who
-    cannot push to ReXNative: they wait in a pull request) come to this copy too, so both lanes
-    build the same code. Nothing to do for who publishes: main has them."""
-    o = _other_copy(d)
-    if not o:
-        return
-    rc, head, _ = _git(['rev-parse', 'HEAD'], o)
-    if rc != 0 or not head:
-        return
-    # Commits of origin/main..<the other HEAD> with no equal change here.
-    rc, out, _ = _git(['cherry', 'HEAD', head, 'origin/main'], d)
-    new = [l[2:].strip() for l in out.splitlines() if l.startswith('+ ')] if rc == 0 else []
-    if not new:
-        return
-    rc, _, err = _git(['cherry-pick'] + new, d)
-    if rc != 0:
-        _git(['cherry-pick', '--abort'], d)
-        log('info', 'ReXNative: %d unpublished commit(s) of the other copy (%s) do not apply here (%s)' % (
-            len(new), o, err[-160:]))
-    else:
-        log('info', 'ReXNative: %d unpublished commit(s) of the other copy (%s) brought here' % (len(new), o))
+    """Commits the assistant made in another lane's copy and could not publish (someone who cannot
+    push to ReXNative: they wait in a pull request) come to this copy too, so every lane builds the
+    same code. Nothing to do for who publishes: main has them."""
+    for o in _other_copies(d):
+        rc, head, _ = _git(['rev-parse', 'HEAD'], o)
+        if rc != 0 or not head:
+            continue
+        # Commits of origin/main..<the other HEAD> with no equal change here.
+        rc, out, _ = _git(['cherry', 'HEAD', head, 'origin/main'], d)
+        new = [l[2:].strip() for l in out.splitlines() if l.startswith('+ ')] if rc == 0 else []
+        if not new:
+            continue
+        rc, _, err = _git(['cherry-pick'] + new, d)
+        if rc != 0:
+            _git(['cherry-pick', '--abort'], d)
+            log('info', 'ReXNative: %d unpublished commit(s) of the other copy (%s) do not apply here (%s)' % (
+                len(new), o, err[-160:]))
+        else:
+            log('info', 'ReXNative: %d unpublished commit(s) of the other copy (%s) brought here' % (len(new), o))
 
 
 def sync(job=None):

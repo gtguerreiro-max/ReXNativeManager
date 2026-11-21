@@ -1,7 +1,8 @@
 """Tarefas em segundo plano (downloads, preparar/compilar/testar, Steam Deck), cada uma com o seu
 registo em <data_dir>/logs/<id>.log e eventos para a interface. Correm em "faixas": downloads em
 paralelo (max_downloads), compilações uma de cada vez (o PC fica ocupado), os relatórios numa pista
-sua (report, com a sua cópia do ReXNative), o Deck uma de cada vez.
+sua (report) e os jogos novos noutra (prepare), cada uma com a sua cópia do ReXNative, o Deck uma de
+cada vez.
 Cancelar mata só a árvore de processos da própria tarefa (taskkill /T), nunca outros processos.
 
 A fila sobrevive a um reinício da app: uma tarefa em fila cujo tipo tem uma receita (Manager.resume:
@@ -192,7 +193,7 @@ class Job:
 
 
 class Manager:
-    LANES = {'download': None, 'build': 1, 'report': 1, 'deck': 1, 'quick': 3, 'orders': 6}
+    LANES = {'download': None, 'build': 1, 'report': 1, 'prepare': 1, 'deck': 1, 'quick': 3, 'orders': 6}
 
     def __init__(self):
         Job.manager = self

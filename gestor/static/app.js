@@ -1528,6 +1528,8 @@ const SETTINGS = [
     ['rexnative_dir', 'ReXNative copy to build with (worktree)'], ['python', 'Python (empty: the one the app uses)'],
     ['report_lane', 'Reports run beside the builds, in a ReXNative copy of their own', 'bool'],
     ['report_rexnative_dir', 'ReXNative copy for reports (empty: the one above with -reports)'],
+    ['prepare_lane', 'New games are prepared beside the builds, in a ReXNative copy of their own', 'bool'],
+    ['prepare_rexnative_dir', 'ReXNative copy for new games (empty: the one above with -prepare)'],
     ['env', 'Environment variables (NAME=value, one per line)', 'env'],
     ['prepare_args', 'Prepare options', 'args'],
     ['boot_seconds', 'Boot test: seconds', 'int'], ['boot_seconds_max', 'Boot test: maximum without stats', 'int'],
