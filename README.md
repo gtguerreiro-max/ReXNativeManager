@@ -45,7 +45,8 @@ couch with the controller.
 - **Up to date or not:** every build records the ReXNative commit and SDK it was made with; each
   game says which fixes it lacks, and **Rebuild outdated** brings them all up.
 - **Play:** on this PC (the game page, or the Play button on each card) or on the Deck through its
-  Steam, from the PC or from Deck mode.
+  Steam, from the PC or from Deck mode. On the PC, a controller or the keyboard (Enter Start, Space A,
+  W A S D move, arrows look); the Manager says when no controller is connected.
 - **Steam Deck:** install (internal storage or microSD), update, delete with a backup of the saves,
   per-game settings, the Steam artwork, the library shortcuts.
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your
@@ -215,10 +216,17 @@ selects, B goes back, X searches, Y sorts, L1/R1 switch tabs, Menu exits. Touch 
   screen shows", and text via the on-screen keyboard); the app gathers what the Deck knows about
   the game (the latest log, the settings it uses there, the Steam screenshots from the last 24 h,
   Steam + R1) and, if requested, a capture on the Deck (the game opens through Steam with the
-  renderer capture request, is captured at N seconds and closes). Claude investigates on the PC
+  renderer capture request, is captured at N seconds and closes). **Send my save** (on by default)
+  copies the game's saves from the Deck into the PC copy, so Claude plays from your progress and
+  reaches a menu or level a new game does not have (the PC's own saves are kept in
+  `backups/pc`; the Deck's save is not changed). Claude investigates on the PC
   knowing it is a Deck problem (reproducing with the Deck settings); if it fixes it, the game is
   built, tested and resent to the Deck. The report shows up in Requests (Collect on Deck, Claude
   investigates, Send the fix) with what Claude found.
+- **The assistant's conversation**: open a request in Requests to follow what the assistant says
+  and does (Claude or the one chosen in Settings), live; while Claude works, **X** writes to it
+  with the on-screen keyboard (a hint, what you saw, where to look) and the message reaches it in
+  what it is doing. On the PC, the job view has the same box.
 - **Requests**: the stages of each one (Download, Build on PC, Send to Deck, Library) with the
   progress, the speed and the time left; cancel and retry.
   Inside "Build on PC", the phases of the current step (`progress.py` reads the step's log):
@@ -382,7 +390,7 @@ captures and picks covers (`gestor/agents.py`):
 
 | Assistant | Sign in once | How the app runs it |
 |---|---|---|
-| Claude Code (`claude`) | `claude auth login` | `claude -p --output-format stream-json` |
+| Claude Code (`claude`) | `claude auth login` | `claude -p --input-format stream-json --output-format stream-json` (you can write to it while it works) |
 | OpenAI Codex (`codex`) | `codex login` (ChatGPT account) | `codex exec --json` |
 | Gemini CLI (`gemini`) | `gemini` > Sign in with Google, or `GEMINI_API_KEY` | `gemini --output-format stream-json` |
 | Antigravity CLI (`agy`) | `agy` (Google account) | `agy -p ... --output-format stream-json` |

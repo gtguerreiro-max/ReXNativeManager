@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import subprocess
+import tarfile
 import threading
 import time
 
@@ -13,9 +14,9 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
-               games, github, info, jobs, lan, linuxbuild, orders, owngames, pipeline, rexlog, rexrepo, sdk,
-               state, tunings, versions, xna)
+from . import (agents, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
+               games, github, info, jobs, lan, linuxbuild, orders, owngames, pipeline, rexlog, rexrepo, saves,
+               sdk, state, tunings, versions, xna)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title='ReXNative Manager')
@@ -532,6 +533,41 @@ def _exe_running(exe):
     return os.path.basename(exe).lower() in out.lower()
 
 
+def _pads():
+    """Quantos comandos o Windows vê ligados a este PC (a API de joysticks do winmm: Xbox, PlayStation,
+    genéricos), ou None se não se souber."""
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        class JOYINFOEX(ctypes.Structure):
+            _fields_ = [(n, wintypes.DWORD) for n in (
+                'dwSize', 'dwFlags', 'dwXpos', 'dwYpos', 'dwZpos', 'dwRpos', 'dwUpos', 'dwVpos', 'dwButtons',
+                'dwButtonNumber', 'dwPOV', 'dwReserved1', 'dwReserved2')]
+        winmm = ctypes.windll.winmm
+        info = JOYINFOEX()
+        info.dwSize = ctypes.sizeof(JOYINFOEX)
+        info.dwFlags = 0xFF  # JOY_RETURNALL
+        return sum(1 for i in range(min(int(winmm.joyGetNumDevs()), 16))
+                   if winmm.joyGetPosEx(i, ctypes.byref(info)) == 0)
+    except (OSError, AttributeError, ValueError):
+        return None
+
+
+def _keyboard_flag(toml_path):
+    """O teclado como comando (hid.mnk_mode do ReXGlue, desligado de origem): sem ele, um PC sem
+    comando ligado não tinha controlos nenhuns. Junta-se ao comando no jogador 1 (não lhe tira o
+    lugar). Fica o que o .toml do jogo disser, se disser."""
+    try:
+        import tomllib
+        with open(toml_path, 'rb') as f:
+            if 'mnk_mode' in (tomllib.load(f).get('hid') or {}):
+                return []
+    except (OSError, ValueError):
+        pass
+    return ['--hid.mnk_mode=true']
+
+
 @app.post('/api/games/{slug}/play')
 def game_play(slug: str, body: dict = Body(default={})):
     """Jogar: where = 'pc' (o executável compilado, neste PC, com as definições do PC) ou 'deck' (o
@@ -553,12 +589,14 @@ def game_play(slug: str, body: dict = Body(default={})):
         if j.kind == 'pipeline':
             raise HTTPException(409, 'the PC is building or testing this game now (job %s): play when it ends' % j.id)
     exe = os.path.join(w, 'run', g['exe'] + '.exe')
+    pads = _pads()
     if _exe_running(exe):
-        return {'ok': True, 'already': True, 'title': g['title']}
+        return {'ok': True, 'already': True, 'title': g['title'], 'pads': pads}
+    keys = _keyboard_flag(os.path.splitext(exe)[0] + '.toml')
     # Um processo à parte, no seu grupo: fica aberto se a app fechar.
-    subprocess.Popen([exe], cwd=os.path.dirname(exe), creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
+    subprocess.Popen([exe] + keys, cwd=os.path.dirname(exe), creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
-    return {'ok': True, 'already': False, 'title': g['title']}
+    return {'ok': True, 'already': False, 'title': g['title'], 'pads': pads, 'keyboard': bool(keys)}
 
 
 @app.post('/api/games/{slug}/pipeline')
@@ -1430,6 +1468,81 @@ def _remote_visible(j):
         bool((j.params or {}).get('from_deck'))
 
 
+# -- a conversa com o assistente: ver o que faz e escrever-lhe (Modo Deck e app do PC) --------------
+CHAT_KINDS = ('claude', 'claude-text', 'claude-tool', 'claude-user')
+
+
+def _assistant_job(j):
+    """A tarefa onde corre (ou correu) a sessão do assistente: a própria, ou uma que ela seguiu (um
+    pedido do Deck segue o relatório ou o pipeline). A mais recente com conversa."""
+    cands = [j] + [manager.get(e['job']) for e in j.events if e.get('job')]
+    if (j.result or {}).get('sub'):
+        cands.append(manager.get(j.result['sub']))
+    found = None
+    for c in cands:
+        if c is not None and (c._say is not None or any(e.get('kind') in CHAT_KINDS for e in c.events)):
+            found = c if c._say is not None or found is None or found._say is None else found
+    return found
+
+
+def _chat_view(j):
+    aj = _assistant_job(j)
+    ag = agents.name()
+    who = 'Claude' if ag == 'claude' else agents.NAMES.get(ag, ag)
+    if aj is None:
+        return {'job': None, 'live': False, 'who': who, 'messages': [], 'status': None}
+    msgs = [{'t': e.get('t'), 'kind': e['kind'], 'text': e.get('text') or '', 'final': bool(e.get('final'))}
+            for e in aj.events if e.get('kind') in CHAT_KINDS]
+    return {'job': aj.id, 'live': aj._say is not None, 'who': who, 'messages': msgs[-150:], 'status': aj.status}
+
+
+def _chat_say(j, body):
+    text = (body.get('text') or '').strip()[:2000]
+    if not text:
+        raise HTTPException(400, 'write something first')
+    aj = _assistant_job(j)
+    say = aj._say if aj is not None else None  # a sessão pode fechar entretanto: a mesma função
+    if say is None:
+        raise HTTPException(409, 'the assistant is not working on this now')
+    try:
+        say(text)
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(409, str(e))
+    return _chat_view(j)
+
+
+@app.get('/api/remote/chat/{job_id}')
+def remote_chat(job_id: str):
+    j = manager.get(job_id)
+    if not j or not _remote_visible(j):
+        raise HTTPException(404)
+    return _chat_view(j)
+
+
+@app.post('/api/remote/chat/{job_id}')
+def remote_chat_say(job_id: str, body: dict = Body(...)):
+    j = manager.get(job_id)
+    if not j or not _remote_visible(j):
+        raise HTTPException(404)
+    return _chat_say(j, body)
+
+
+@app.get('/api/jobs/{job_id}/chat')
+def job_chat(job_id: str):
+    j = manager.get(job_id)
+    if not j:
+        raise HTTPException(404)
+    return _chat_view(j)
+
+
+@app.post('/api/jobs/{job_id}/say')
+def job_say(job_id: str, body: dict = Body(...)):
+    j = manager.get(job_id)
+    if not j:
+        raise HTTPException(404)
+    return _chat_say(j, body)
+
+
 @app.get('/api/remote/job/{job_id}')
 def remote_job(job_id: str):
     j = manager.get(job_id)
@@ -1663,6 +1776,31 @@ REPORT_CHIPS = {
 REPORT_KIND = {'lento': 'Slow / FPS', 'fecha': 'Crashes or freezes', 'som': 'Sound', 'comandos': 'Controls'}
 
 
+def _deck_saves_to_pc(job, dk, g, w, slug, dest, rid):
+    """Os saves do jogador no Deck vão para a cópia do PC, para o Claude chegar ao sítio do relatório
+    (um menu que só abre com o progresso do jogo); os do PC ficam antes numa cópia."""
+    if not g.get('saves'):
+        job.event('info', 'The game has no saves on the Deck: Claude starts from the PC copy')
+        return
+    info = games.info(w)
+    if info.get('exe') and _exe_running(os.path.join(w, 'run', info['exe'] + '.exe')):
+        job.event('info', 'The game is open on this PC: its saves stay as they are (close it and report again '
+                          'to send the Deck save)')
+        return
+    try:
+        tar = deck.fetch_saves(job, dk, g, os.path.join(dest, 'deck-saves.tar'))
+        if not tar:
+            return
+        put = saves.install(w, slug, tar)
+    except (RuntimeError, OSError, tarfile.TarError) as e:
+        job.event('info', 'The Deck save did not reach the PC: %s' % e)
+        return
+    put['deck'] = tar
+    state.update('reports', rid, {'saves': put})
+    job.event('ok', 'Your Deck save is in the PC copy, for Claude (%d files)%s' % (
+        put['files'], '; the PC saves from before are in %s' % put['backup'] if put['backup'] else ''))
+
+
 def deck_report_job(job, w, slug, body, rid):
     hooks = orders.Hooks
     dest = config.data_dir('reports', rid)
@@ -1689,6 +1827,8 @@ def deck_report_job(job, w, slug, body, rid):
                         files += deck.capture(job, dk, g, dest, int(body.get('seconds') or 40))
                     except RuntimeError as e:
                         job.event('info', 'No capture: %s' % e)
+            if body.get('saves', True):
+                _deck_saves_to_pc(job, dk, g, w, slug, dest, rid)
         else:
             job.event('info', '%s is not on the Deck: sending only the description' % slug)
     else:
@@ -1733,7 +1873,8 @@ def remote_report(slug: str, body: dict = Body(...)):
         'captures': [], 'status': 'queued', 'from': 'deck'})
     j = manager.submit('deck-report', 'Report: %s' % games.info(w)['title'],
                        lambda job: deck_report_job(job, w, slug, body, rid), lane='orders', game=slug,
-                       params={'report': rid, 'chips': chips, 'capture': bool(body.get('capture'))})
+                       params={'report': rid, 'chips': chips, 'capture': bool(body.get('capture')),
+                               'saves': bool(body.get('saves', True))})
     return _job(j)
 
 

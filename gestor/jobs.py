@@ -48,6 +48,8 @@ class Job:
         self.log_path = os.path.join(config.data_dir('logs'), self.id + '.log')
         self._fn = fn
         self._proc = None
+        # Escrever ao assistente enquanto trabalha (claude._session, só com o Claude); None sem sessão aberta.
+        self._say = None
         self._cancel = threading.Event()
 
     # -- registo ---------------------------------------------------------------------------
@@ -126,6 +128,7 @@ class Job:
         d['params'] = dict(self.params) if isinstance(self.params, dict) else self.params
         d['result'] = dict(self.result) if isinstance(self.result, dict) else self.result
         d['status_pt'] = STATUS_PT.get(self.status, self.status)
+        d['chat'] = self._say is not None  # o assistente está a trabalhar e lê o que se lhe escreve
         if with_events:
             d['events'] = self.events[-200:]
         if progress and self.status == 'running' and callable(self.progress):

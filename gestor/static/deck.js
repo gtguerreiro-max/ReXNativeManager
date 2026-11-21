@@ -1240,6 +1240,8 @@ function openReport(slug) {
     <button class="check f on" id="rcap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Take a screenshot on the Deck: the game opens, is captured and closes on its own</button>
     <div style="height:10px"></div>
     <button class="opt f" id="rsecs" data-hint="Change" onclick="reportSecs(1)"><span class="l">Screenshot at</span><span class="arr">◀</span><span class="v">${RSECS[st.secs]} s</span><span class="arr">▶</span></button>
+    <div style="height:10px"></div>
+    <button class="check f on" id="rsave" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Send my save: Claude plays from your progress, to reach a menu or level a new game does not have (your save on the Deck stays as it is)</button>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
       <button class="btn p f" data-hint="Send" onclick="sendReport('${esc(slug)}')">Send to Claude</button></div></div>`, { focus: '.pill' });
   l.report = st;
@@ -1263,8 +1265,9 @@ async function sendReport(slug) {
   const chips = $$('.pill.on', l.el).map(b => b.dataset.chip);
   if (!chips.length && !l.report.text) { toast('Choose what you see or write a description', true); return; }
   const capture = $('#rcap', l.el).classList.contains('on');
+  const saves = $('#rsave', l.el).classList.contains('on');
   try {
-    const j = await api('/api/remote/report/' + encodeURIComponent(slug), { body: { chips, text: l.report.text, capture, seconds: RSECS[l.report.secs] } });
+    const j = await api('/api/remote/report/' + encodeURIComponent(slug), { body: { chips, text: l.report.text, capture, saves, seconds: RSECS[l.report.secs] } });
     S.seen[j.id] = j.status;
     toast(capture ? 'Report sent: the game will open on the Deck for the screenshot and close on its own' : 'Report sent to Claude: follow it in Requests');
     closeAll();
@@ -1423,10 +1426,12 @@ async function openOrder(id) {
   const rep = brief.report;
   const layer = openLayer(`<div class="sheet confirm" style="width:900px"><h3>${o.kind !== 'order' && KIND_LABEL[o.kind] ? KIND_LABEL[o.kind] + ': ' : ''}${esc(otitle(o))}</h3>
     ${rep ? `<p style="color:var(--text)">${esc(rep.text || '')}</p>${rep.summary ? `<div class="banner" style="margin:0 0 12px;white-space:pre-wrap">${esc(rep.status || '')}: ${esc(rep.summary)}</div>` : ''}` : ''}
+    <div class="ochat" hidden><div class="chead"><b class="who">Claude</b><span class="cst"></span></div><div class="clog"></div></div>
     <div class="obody">${orderBody(o)}</div>
-    <div class="acts">${active ? `<button class="btn d f" onclick="cancelOrder({id:'${o.id}',title:${JSON.stringify(o.title).replace(/"/g, '&quot;')}})">Cancel request</button>` : ''}
+    <div class="acts"><button class="btn p f osay" style="display:none" data-hint="Write" onclick="chatWrite('${o.id}')">Write to Claude</button>${active ? `<button class="btn d f" onclick="cancelOrder({id:'${o.id}',title:${JSON.stringify(o.title).replace(/"/g, '&quot;')}})">Cancel request</button>` : ''}
       ${o.kind === 'order' && ['failed', 'cancelled', 'interrupted'].includes(o.status) ? `<button class="btn p f" onclick="retryOrder({id:'${o.id}',title:${JSON.stringify(o.title).replace(/"/g, '&quot;')}})">Try again</button>` : ''}
       <button class="btn f" onclick="closeLayer()">Close</button></div></div>`, { focus: '.btn:last-child' });
+  refreshChat(layer, id);
   // Enquanto o pedido corre, a folha atualiza-se (de 2,5 em 2,5 s, só com ela à vista).
   if (active) {
     let busy = false;
@@ -1437,12 +1442,74 @@ async function openOrder(id) {
         const n = await api('/api/remote/job/' + id);
         const box = $('.obody', layer.el);
         if (box) box.innerHTML = orderBody(n);
+        await refreshChat(layer, id);
         if (n.status !== 'running' && n.status !== 'queued') clearInterval(timer);
       } catch (e) { /* tenta outra vez */ }
       busy = false;
     }, 2500);
     layer.onclose = () => clearInterval(timer);
   }
+}
+// -- a conversa com o assistente: o que diz e faz (Claude ou outro), e escrever-lhe enquanto trabalha
+function chatHtml(c) {
+  const out = [];
+  let tools = [];
+  const flush = () => {
+    if (tools.length) out.push(`<div class="ct">› ${tools.length > 1 ? tools.length + ' steps · ' : ''}${esc(tools[tools.length - 1])}</div>`);
+    tools = [];
+  };
+  const at = m => esc((m.t || '').slice(11, 16));
+  for (const m of c.messages) {
+    if (m.kind === 'claude-tool') { tools.push(m.text); continue; }
+    flush();
+    if (m.kind === 'claude-user') out.push(`<div class="cm u"><span>${esc(m.text)}</span><i>You · ${at(m)}</i></div>`);
+    // O resumo final é a última mensagem dele (e o que a folha já mostra em cima): só o início de cada sessão.
+    else if (m.kind === 'claude') { if (!m.final) out.push(`<div class="cn">${esc(m.text)}</div>`); }
+    else out.push(`<div class="cm a"><span>${esc(m.text)}</span><i>${esc(c.who)} · ${at(m)}</i></div>`);
+  }
+  flush();
+  return out.join('');
+}
+async function refreshChat(layer, id) {
+  let c;
+  try { c = await api('/api/remote/chat/' + id); } catch (e) { return; }
+  const box = $('.ochat', layer.el);
+  if (!box) return;
+  box.hidden = !c.messages.length && !c.live;
+  layer.el.classList.toggle('haschat', !box.hidden);
+  $('.who', box).textContent = c.who;
+  $('.cst', box).textContent = c.live ? ' is working on it · X to write to it' : c.messages.length ? ' · finished' : '';
+  const log = $('.clog', box);
+  const html = chatHtml(c);
+  if (html !== log.dataset.html) {
+    const atEnd = !log.dataset.html || log.scrollTop + log.clientHeight >= log.scrollHeight - 40;
+    log.dataset.html = html;
+    log.innerHTML = html;
+    if (atEnd) log.scrollTop = log.scrollHeight;
+  }
+  const btn = $('.osay', layer.el);
+  btn.textContent = 'Write to ' + c.who;
+  btn.style.display = c.live ? '' : 'none';
+  layer.actions = Object.assign({}, c.live ? { x: ['Write to ' + c.who, () => chatWrite(id)] } : {},
+    c.messages.length ? { y: ['Older', () => chatScroll(layer)] } : {});
+  if (S.layers[S.layers.length - 1] === layer) hints();
+}
+// Y: a conversa sobe uma página; no princípio, volta ao fim.
+function chatScroll(layer) {
+  const log = $('.clog', layer.el);
+  if (!log) return;
+  log.scrollTop = log.scrollTop <= 0 ? log.scrollHeight : log.scrollTop - log.clientHeight * 0.8;
+}
+function chatWrite(id) {
+  const layer = S.layers[S.layers.length - 1];
+  openTextInput('', async t => {
+    if (!t) return;
+    try {
+      await api('/api/remote/chat/' + id, { body: { text: t } });
+      toast('Sent: it reads it in what it is doing now');
+      if (layer) refreshChat(layer, id);
+    } catch (e) { toast(e.message, true); }
+  });
 }
 function cancelOrder(o) {
   openLayer(`<div class="sheet confirm"><h3>Cancel the request for ${esc(o.title)}?</h3>

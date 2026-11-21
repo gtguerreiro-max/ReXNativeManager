@@ -24,12 +24,12 @@ async function api(path, opts = {}) {
   return data;
 }
 
-function toast(msg, bad) {
+function toast(msg, bad, ms) {
   const t = document.createElement('div');
   t.className = 'toast' + (bad ? ' bad' : '');
   t.textContent = msg;
   document.body.appendChild(t);
-  setTimeout(() => t.remove(), bad ? 7000 : 3500);
+  setTimeout(() => t.remove(), ms || (bad ? 7000 : 3500));
 }
 const fail = e => toast(e.message || String(e), true);
 
@@ -389,11 +389,15 @@ async function openGame(slug, sub) {
   renderGame();
 }
 // Jogar: o executável compilado neste PC, ou o atalho do Steam no Deck.
+const PLAY_KEYS = 'Keyboard: Enter Start, Space A, Backspace B, L X, P Y, W A S D move, arrows look, Q and E triggers, 1 and 3 bumpers, Tab Back';
 async function playSlug(slug, where) {
   try {
     const r = await api(`/api/games/${encodeURIComponent(slug)}/play`, { body: { where } });
-    if (where === 'deck') toast('Starting it on the Deck through Steam (follow it in Jobs)');
-    else toast(r.already ? `${r.title} is already open on this PC` : `Starting ${r.title} on this PC`);
+    if (where === 'deck') { toast('Starting it on the Deck through Steam (follow it in Jobs)'); return; }
+    const msg = r.already ? `${r.title} is already open on this PC` : `Starting ${r.title} on this PC`;
+    // Sem comando ligado, o teclado é o comando: diz-se que teclas.
+    if (r.pads === 0) toast(`${msg}. No controller is connected to this PC: plug one in (it is found while the game runs), or play with the keyboard. ${PLAY_KEYS}.`, false, 14000);
+    else toast(msg);
   } catch (e) { fail(e); }
 }
 function subtabs(names, on, fn) {
@@ -422,7 +426,8 @@ function gameSummary(g) {
   ${g.built || onDeck ? `<div class="row" style="margin-top:12px">
     ${g.built ? `<button class="b p" onclick="playSlug('${esc(g.slug)}', 'pc')">▶ Play on this PC</button>` : ''}
     ${onDeck ? `<button class="b" onclick="playSlug('${esc(g.slug)}', 'deck')" title="Through the Deck's Steam, like Play in Deck mode">▶ Play on the Deck</button>` : ''}
-    <span class="small muted">${g.built ? 'with the PC settings (F1 in the game opens the settings HUD)' : ''}</span></div>` : ''}
+    <span class="small muted">${g.built ? 'with the PC settings (F1 in the game opens the settings HUD)' : ''}</span></div>
+    ${g.built ? `<div class="small muted" style="margin-top:6px">A controller or the keyboard. ${PLAY_KEYS}.</div>` : ''}` : ''}
   ${g.unsupported ? `<div class="ev fail" style="margin-top:10px">${esc(g.unsupported_why || g.unsupported)}</div>` : ''}
   <div class="kv" style="margin-top:12px">
     ${g.info ? `<div>Genre</div><div>${esc(g.info.genres.join(', ') || '-')}</div>
@@ -858,7 +863,7 @@ async function openJob(id, back) {
   openDrawer('Job');
   $('#dbody').innerHTML = `
     <div class="row" id="jobhead"><span class="muted">Loading...</span></div>
-    <div id="jobnext"></div><div id="joberr"></div><div id="jobfixes"></div>
+    <div id="jobnext"></div><div id="joberr"></div><div id="jobfixes"></div><div id="jobsay"></div>
     <h3>Steps</h3><div class="events" id="jobevents"></div>
     <h3>Live log <span class="small muted" id="joblogname"></span></h3>
     <div class="row" id="jobsteps"></div>
@@ -866,7 +871,15 @@ async function openJob(id, back) {
     <label class="small muted"><input type="checkbox" id="jobfollow" checked> follow the end of the log</label>`;
   tickJob();
 }
-const EV_LABEL = { step: 'step', ok: 'ok', fail: 'failed', claude: 'Claude', 'claude-text': 'Claude', 'claude-tool': 'Claude uses', info: 'note' };
+const EV_LABEL = { step: 'step', ok: 'ok', fail: 'failed', claude: 'Claude', 'claude-text': 'Claude', 'claude-tool': 'Claude uses', 'claude-user': 'You', info: 'note' };
+// Escrever ao assistente enquanto trabalha (a mensagem entra no que ele está a fazer).
+async function jobSay(id) {
+  const box = $('#jobsaytext');
+  const text = (box.value || '').trim();
+  if (!text) return;
+  try { await api(`/api/jobs/${id}/say`, { body: { text } }); box.value = ''; toast('Sent: it reads it in what it is doing now'); tickJob(); }
+  catch (e) { fail(e); }
+}
 function evHtml(e) {
   return `<div class="ev ${esc(e.kind)}"><span class="t">${esc(e.t.slice(11))} ${esc(EV_LABEL[e.kind] || e.kind)}</span>${esc(e.text)}${
     e.commits && e.commits.length ? `\n<b>Commits:</b> ${esc(e.commits.join(' · '))}${e.pushed === true ? ' (pushed)' : e.pushed === false ? ' (not pushed)' : ''}` : ''}${
@@ -898,6 +911,11 @@ async function tickJob() {
     ${live ? `<button class="b d" onclick="cancelJob('${j.id}')">Cancel</button>` : ''}
     ${j.game && j.game !== 'selftest' ? `<button class="b s" onclick="openGame('${esc(j.game)}')">Open the game</button>` : ''}`;
   $('#joberr').innerHTML = j.error ? `<div class="ev fail" style="margin-top:10px">${esc(j.error)}</div>` : '';
+  // Enquanto o assistente trabalha: uma caixa para lhe escrever (fica o que já se escreveu).
+  if (!j.chat) $('#jobsay').innerHTML = '';
+  else if (!$('#jobsaytext')) $('#jobsay').innerHTML = `<div class="row" style="margin-top:10px;gap:8px">
+    <input id="jobsaytext" style="flex:1" placeholder="Write to the assistant while it works (a hint, what you saw, where to look)" onkeydown="if(event.key==='Enter')jobSay('${j.id}')">
+    <button class="b p" onclick="jobSay('${j.id}')">Send</button></div>`;
   const fixes = (j.result && j.result.claude) || [];
   $('#jobfixes').innerHTML = fixes.length ? `<h3>What Claude did</h3>${fixes.map(f => `<div class="ev claude"><b>Attempt ${f.attempt} (${esc(f.step)})</b>\n${esc(f.summary)}${f.commits && f.commits.length ? '\n<b>Commits:</b> ' + esc(f.commits.join(' · ')) : ''}</div>`).join('')}` : '';
   if (j.events.length !== jobEvCount) {

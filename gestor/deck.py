@@ -668,8 +668,27 @@ def backup_saves(job, dk, g):
     if not have:
         job.event('info', 'No saves or settings to back up (there is no userdata/)')
         return None
-    cmd = dk.d.ssh_cmd('cd %s && tar -cf - --exclude="*/00000002" %s' % (
-        q(g['path']), ' '.join(q(m) for m in have)))
+    n = _tar_from_deck(job, dk, g['path'], have, dest, '--exclude="*/00000002" ', 'The backup')
+    job.event('ok', 'Backup: %s (%d entries, %.1f MB)' % (dest, n, os.path.getsize(dest) / 1e6))
+    return dest
+
+
+def fetch_saves(job, dk, g, dest):
+    """Os saves do jogo no Deck (userdata/<perfil>/<jogo>/00000001 e os seus cabeçalhos, sem
+    definições nem conteúdo descarregável) num .tar em dest. None se não tiver nenhum."""
+    have = dk.ssh('cd %s && ls -d userdata/*/*/00000001 userdata/*/*/Headers/00000001 2>/dev/null; true' % (
+        q(g['path'])), timeout=60).stdout.split()
+    if not have:
+        return None
+    n = _tar_from_deck(job, dk, g['path'], have, dest, '', 'Copying the saves')
+    job.event('ok', 'The saves from the Deck: %d entries, %.1f KB' % (n, os.path.getsize(dest) / 1e3))
+    return dest
+
+
+def _tar_from_deck(job, dk, cwd, members, dest, options, what):
+    """Um .tar com estes caminhos da pasta cwd do Deck, verificado antes de ficar em dest; devolve
+    quantas entradas tem."""
+    cmd = dk.d.ssh_cmd('cd %s && tar -cf - %s%s' % (q(cwd), options, ' '.join(q(m) for m in members)))
     job.log('$ ' + ' '.join(cmd))
     part = dest + '.part'
     try:
@@ -677,18 +696,17 @@ def backup_saves(job, dk, g):
             r = subprocess.run(cmd, stdout=f, stderr=subprocess.PIPE, timeout=1800,
                                creationflags=jobs.CREATE_NO_WINDOW)
         if r.returncode != 0:
-            raise RuntimeError('The backup failed: %s' % r.stderr.decode(errors='replace')[-300:])
+            raise RuntimeError('%s failed: %s' % (what, r.stderr.decode(errors='replace')[-300:]))
         try:
             with tarfile.open(part) as t:
                 n = len(t.getmembers())
         except tarfile.TarError as e:
-            raise RuntimeError('The backup is incomplete (%s): nothing was deleted' % e)
+            raise RuntimeError('%s is incomplete (%s): nothing was changed' % (what, e))
         os.replace(part, dest)
     finally:
         if os.path.exists(part):
             os.remove(part)
-    job.event('ok', 'Backup: %s (%d entries, %.1f MB)' % (dest, n, os.path.getsize(dest) / 1e6))
-    return dest
+    return n
 
 
 def delete_job(job, slug, backup=True):

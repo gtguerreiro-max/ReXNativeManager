@@ -321,6 +321,13 @@ def investigate(job, work, report):
         if deck_files:
             boot_txt += 'Files from the Deck (its game log, its settings, captures):\n' + ''.join(
                 '  %s\n' % f for f in deck_files)
+    sv = report.get('saves') or {}
+    if sv.get('files'):
+        boot_txt += ("The player's saves from the Deck are in the PC copy now (%s, %d files; the PC's own saves "
+                     "from before are in %s): the game starts with the player's progress. Load it (continue "
+                     "or load, not a new game) to reach the place in the report, which may only open with "
+                     "that progress. Do not delete them.\n" % (sv.get('run'), sv['files'],
+                                                              sv.get('backup') or 'none (it had none)'))
     deck_log = os.path.join(work, 'deck', 'try.log')
     if os.path.exists(deck_log):
         boot_txt += 'Last try on the Steam Deck: log %s (captures in %s)\n' % (
@@ -346,7 +353,9 @@ def run(job, prompt, cwd, work, cheap=False, tag='1', intro='Claude', git=True, 
     exe = config.claude_exe()
     if not exe:
         raise RuntimeError('Claude Code not found: set its path in Settings')
-    cmd = [exe, '-p', '--output-format', 'stream-json', '--verbose',
+    # A entrada também em stream-json: o stdin fica aberto e o jogador pode escrever-lhe enquanto
+    # trabalha (a mensagem entra no turno que está a correr); fecha-se no resultado.
+    cmd = [exe, '-p', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
            '--permission-mode', cfg['claude_permission_mode'] or 'auto',
            '--permission-prompts', 'none', '--no-session-persistence',
            '--add-dir', work, '--add-dir', config.data_dir('logs')]
@@ -365,7 +374,7 @@ def run(job, prompt, cwd, work, cheap=False, tag='1', intro='Claude', git=True, 
             cmd += ['--effort', cfg['claude_effort']]
     if str(cfg.get('claude_budget_usd') or '').strip():
         cmd += ['--max-budget-usd', str(cfg['claude_budget_usd']).strip()]
-    return _session(job, cmd, True, prompt, cwd, git, tag, intro, _handle, exe, 'Claude')
+    return _session(job, cmd, True, prompt, cwd, git, tag, intro, _handle, exe, 'Claude', chat=True)
 
 
 def _run_with(job, prompt, cwd, work, cheap, tag, intro, git, ag):
@@ -387,9 +396,19 @@ def _run_with(job, prompt, cwd, work, cheap, tag, intro, git, ag):
                     handle, exe, agents.NAMES[ag])
 
 
-def _session(job, cmd, via_stdin, prompt, cwd, git, tag, intro, handle, exe, who):
+def _user_line(text):
+    return (json.dumps({'type': 'user', 'message': {'role': 'user', 'content': [
+        {'type': 'text', 'text': text}]}}) + '\n').encode('utf-8')
+
+
+CHAT_INTRO = ('A message from the player, written in the Manager (on the PC or the Steam Deck) while you '
+              'work. Take it into account, answer it briefly in your next reply, and carry on:\n\n')
+
+
+def _session(job, cmd, via_stdin, prompt, cwd, git, tag, intro, handle, exe, who, chat=False):
     """Corre a sessão (o pedido pelo stdin, ou já num ficheiro), mostra o que vai fazendo, para-a no
-    tempo limite, e no fim vê os commits que fez e se os publicou."""
+    tempo limite, e no fim vê os commits que fez e se os publicou. chat: o pedido vai como mensagem
+    stream-json e o stdin fica aberto até ao resultado, para o jogador lhe escrever (job._say)."""
     git = git and os.path.isdir(os.path.join(cwd, '.git')) or (git and os.path.isfile(os.path.join(cwd, '.git')))
     head_before = _git(['rev-parse', 'HEAD'], cwd) if git else ''
     raw_path = os.path.join(config.data_dir('logs'), '%s-claude-%s.jsonl' % (job.id, tag))
@@ -399,9 +418,36 @@ def _session(job, cmd, via_stdin, prompt, cwd, git, tag, intro, handle, exe, who
                          stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                          creationflags=jobs.CREATE_NO_WINDOW | jobs.CREATE_NEW_PROCESS_GROUP)
     job._proc = p
-    if via_stdin:
-        p.stdin.write(prompt.encode('utf-8'))
-    p.stdin.close()
+    lock = threading.Lock()
+    stdin_open = [True]
+
+    def close_stdin():
+        with lock:
+            job._say = None
+            if stdin_open[0]:
+                stdin_open[0] = False
+                try:
+                    p.stdin.close()
+                except OSError:
+                    pass
+
+    if chat:
+        p.stdin.write(_user_line(prompt))
+        p.stdin.flush()
+
+        def say(text):
+            with lock:
+                if not stdin_open[0]:
+                    raise RuntimeError('%s has finished: write in a new report' % who)
+                p.stdin.write(_user_line(CHAT_INTRO + text))
+                p.stdin.flush()
+            job.event('claude-user', text)
+
+        job._say = say
+    else:
+        if via_stdin:
+            p.stdin.write(prompt.encode('utf-8'))
+        close_stdin()
     result = {}
     edited = []
     lines = []
@@ -425,6 +471,8 @@ def _session(job, cmd, via_stdin, prompt, cwd, git, tag, intro, handle, exe, who
         while True:
             while seen < len(lines):
                 handle(job, lines[seen], result, edited)
+                if chat and stdin_open[0] and b'"type":"result"' in lines[seen].replace(b' ', b''):
+                    close_stdin()  # o turno acabou: sem stdin, a sessão termina
                 seen += 1
             if not t.is_alive() and seen >= len(lines):
                 break
@@ -448,6 +496,7 @@ def _session(job, cmd, via_stdin, prompt, cwd, git, tag, intro, handle, exe, who
             handle(job, lines[seen], result, edited)
             seen += 1
     finally:
+        close_stdin()
         job._proc = None
     head_after = _git(['rev-parse', 'HEAD'], cwd) if git else ''
     commits = []

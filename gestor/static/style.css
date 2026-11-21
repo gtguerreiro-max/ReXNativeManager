@@ -89,7 +89,7 @@ td.num, th.num { text-align: right; white-space: nowrap; }
 .ev .t { color: var(--muted); font-size: 11.5px; margin-right: 8px; }
 .ev.step { border-left-color: var(--info); } .ev.ok { border-left-color: var(--accent); }
 .ev.fail { border-left-color: var(--bad); } .ev.claude { border-left-color: #c58af9; background: #221a2b; }
-.ev.claude-text { border-left-color: #c58af9; } .ev.claude-tool { border-left-color: #6b4f86; font-family: Consolas, monospace;
+.ev.claude-text { border-left-color: #c58af9; } .ev.claude-user { border-left-color: #4fc3f7; } .ev.claude-tool { border-left-color: #6b4f86; font-family: Consolas, monospace;
   font-size: 12px; color: #c9b6dd; padding: 4px 10px; }
 .ev.info { border-left-color: var(--warn); }
 .picks { display: flex; gap: 10px; flex-wrap: wrap; }

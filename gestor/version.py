@@ -8,10 +8,24 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.11.1'
+VERSION = '1.12.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.12.0', '2026-11-21', [
+        'Talk to the assistant: open a request (Deck mode, Requests) or a job (PC) to follow what Claude, '
+        'or the assistant chosen in Settings, says and does, live; while Claude works you can write to '
+        'it (X and the on-screen keyboard on the Deck, a box on the PC) and it reads the message in what '
+        'it is doing.',
+        'Report a problem from the Deck: "Send my save" (on by default) copies the game saves from the '
+        'Deck into the PC copy, so Claude plays from your progress and reaches menus a new game does not '
+        'have. The saves the PC had are kept in backups/pc; the Deck save is not changed.',
+    ]),
+    ('1.11.2', '2026-11-21', [
+        'Play on this PC: the keyboard works as a controller (Enter Start, Space A, W A S D move, arrows '
+        'look; the keys are on the game page), beside any controller. Without a controller connected the '
+        'game had no controls at all. Play also says when the PC has no controller connected.',
+    ]),
     ('1.11.1', '2026-11-20', [
         'Restart and Update from GitHub refuse to restart when the code on disk does not compile (and '
         'say where): restarting with a broken file left the app down until it was opened by hand.',
