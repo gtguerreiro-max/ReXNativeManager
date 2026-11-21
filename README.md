@@ -157,7 +157,12 @@ From download to the Steam Deck:
    tools before reading code (the Xenos renderer at the same spot, `-Oracle`, `compare`, `audit`,
    `idle`, RenderDoc `summary`; the log for sound, crashes and speed), searches the renderer's
    sources and docs, not the generated code (`watch` names what writes an address), and
-   rebuilds once per idea. It also gets the game's test scenes, to play at once. The assistant's
+   rebuilds once per idea. It also gets the game's test scenes, to play at once. When the player
+   left a snapshot, the report opens with it (its picture, what the player saw, and its trace) and
+   Claude starts there: it plays the trace on the PC and sets it beside the picture (wrong the same
+   way: the trace is its fast loop and the place's test scene; right on the PC: it plays it with the
+   Deck's settings, or the fault is the Deck's own), and reaches the place live only for what a
+   trace does not hold. When it cannot reach the place and has no snapshot, it asks for one. The assistant's
    sessions have a `live.ps1` state folder of their own (`REXNATIVE_LIVE_STATE`,
    `%LOCALAPPDATA%\rexnative-live-manager`): another session's live game is never in their way,
    and the app closes the game a session left running in either folder.

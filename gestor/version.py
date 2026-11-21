@@ -8,10 +8,18 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.17.0'
+VERSION = '1.17.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.17.1', '2026-11-21', [
+        'Reports with a snapshot: what Claude is told now opens with the snapshot, beside your description '
+        '(its picture first, then its trace), and its first step is to play that trace on the PC and set it '
+        'beside the picture, instead of reaching the place: wrong the same way, it fixes on that trace; right '
+        'on the PC, it plays it with the settings of the Deck (a path of one setting) or reasons about the '
+        'GPU of the Deck. It reaches the place live only for what a trace does not hold, and when it cannot reach a place '
+        'without a snapshot it asks you for one (View + Menu, then Y).',
+    ]),
     ('1.17.0', '2026-11-21', [
         'Snapshots for reports: at the place, in the game, open the settings menu (View + Menu on the Deck) '
         'and press Y. ReXNative saves that moment: the picture as shown and a trace of the next frames. A '

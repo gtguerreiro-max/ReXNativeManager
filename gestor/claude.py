@@ -259,7 +259,7 @@ The user's report:
 - Kind: {kind}
 - Where: {where}
 - What they see: {text}
-{captures}{boot}
+{snapshot}{captures}{boot}
 Work fast. The time goes into starting the game (logos, intros, loading the save: minutes) and
 into rebuilds (minutes each); an experiment on a running game or on a recorded trace takes
 seconds. Aim for a fix checked on the PC within about {aim} minutes (the app stops you after
@@ -267,21 +267,9 @@ seconds. Aim for a fix checked on the PC within about {aim} minutes (the app sto
 game has a state folder of its own (REXNATIVE_LIVE_STATE is set for you): no other session's game
 is in your way, and you never stop someone else's.
 
-1. (A snapshot's trace from the player, above, comes first: play it.) Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."`
-   (`pad:` presses the game's own pad, no window focus needed; `<s>:hold:ENTER:150` sends keys).
-   With the player's save, Continue or Load, never a new game. Wait in short steps
-   (`Start-Sleep 20`, then `live.ps1 frame <tag>` and look at the PNG), never minutes blind.
-2. Record it at once, before changing anything: `live.ps1 record 3` prints a frame trace (a .rxt
-   in {run}\\live\\trace). It is your fast loop: after a rebuild,
-   `live.ps1 play "<trace>" -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
-   draws those frames with the new build and exits in about 20 s (the images:
-   {run}\\live\\cap\\f<i>-native.png, from the second time through), with no game to reach again.
-   It is also this game's test scene: add a line `SCENE: <trace path>` after SUSPECTS (at most 2);
-   the app then checks that place after every later ReXNative change. If `play` says the trace no
-   longer fits the build ("record it again"), reach the place live once more and record again.
-   Skip the trace only when the place cannot be reached.
-3. Sort the fault before reading code (seconds each, on the live game; docs/DEBUGGING.md has the
-   whole table):
+{first_steps}3. Sort the fault before reading code (seconds each, on the live game; docs/DEBUGGING.md has the
+   whole table). A trace played without the loop and dump flags keeps drawing, and `frame`,
+   `capture`, `debug`, `snap`, `drawlog` and `control "set ..."` work on it as on the game:
    - Is it ReXNative's renderer? `live.ps1 control "renderer stock"`, `frame`, then
      `control "renderer native"`: ReXGlue's Xenos renderer at the same spot. Wrong there too: not
      ReXNative's renderer (the game's settings or layer, the SDK, the game itself). Right there:
@@ -315,22 +303,64 @@ is in your way, and you never stop someone else's.
    rules).{push}
 6. Try a fix: the user wants an attempt, not "it cannot be done". Start the summary with
    "NO FIX:" only when no attempt can work now (or the attempts you made and checked failed),
-   saying what you tried. If ReXGlue's renderer draws it right and ReXNative's could not be
-   fixed, also set `[rexnative]` `classic = true` in {run}\\{name}.toml and in {work}\\deck.toml as
+   saying what you tried. If you could not reach the place and the player left no snapshot of it,
+   say so and ask for one (in the game, at the place: View + Menu on the Deck, Back + Start or F1 on
+   the PC, then Y; then Report a problem again). If ReXGlue's renderer draws it right and
+   ReXNative's could not be fixed, also set `[rexnative]` `classic = true` in {run}\\{name}.toml and in {work}\\deck.toml as
    a workaround (the game then starts on the Classic renderer, with the settings HUD), and say so.
 7. `live.ps1 stop` when you are done.
 
 End with a SHORT summary in English for the user: the cause, what you changed
-(files, commits), and where in the game to check that it is right.
+(files, commits), and where in the game to check that it is right (if it is still wrong there, a
+snapshot of it, the settings menu and then Y, goes with the next report).
 Finish the summary with these lines, exactly in this form:
 REXNATIVE: <one short sentence: what this changed in ReXNative for every game, or "nothing">
 COMMITS: <the short hashes of the ReXNative commits YOU made (after the push), space-separated, or "none">
 SUSPECTS: <only if you committed ReXNative changes: up to 6 folder names of OTHER prepared games
 (in {work_roots}) that go through the code you changed,
 judged from their logs (run\\logs\\*.log, run\\logs\\live\\*.log) and layers, space-separated; or "none">
-SCENE: <the trace you recorded at the place, one line each, at most 2; leave the line out if none>
+SCENE: <the trace of the place, the player's snapshot trace or one you recorded, one line each, at most 2;
+leave the line out if none>
 
 {rules}"""
+
+
+FIRST_SNAPSHOT = """1. Start from the player's snapshot (above): no game to reach. Look at its picture, then
+   `live.ps1 play "<its trace>" -Dir "{run}" -Exe {name}.exe -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
+   draws its frames with the PC's build and exits in about 20 s (the images:
+   {run}\\live\\cap\\f<i>-native.png, from the second time through). Set them beside the picture:
+   - Wrong the same way: the fault is in the game's data or in how ReXNative draws it, and this
+     trace is your fast loop: after each rebuild, play it again. It is the place's test scene too.
+   - Right on the PC but wrong in the picture: the difference is the machine's. Play it again with
+     that machine's settings (for the Deck: copy the Deck's settings file over {run}\\{name}.toml,
+     play, then put the PC's file back). Wrong now: a setting's path (the upscaler, its mode...).
+     Still right: the Deck's GPU and driver under Proton; reason from the picture, the Deck's log
+     and the code (you cannot use the Deck).
+   - `play` says the trace does not fit this build (the PC build changed since it was taken):
+     reach the place live instead (2.).
+2. Reach the place live only when you need the running game (a fault the trace does not hold:
+   timing, or state from earlier frames, see 3.; or the last check after the fix):
+   `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."` (`pad:` presses the
+   game's own pad, no window focus needed), with the player's save (Continue or Load, never a new
+   game); wait in short steps (`Start-Sleep 20`, then `live.ps1 frame <tag>`), never minutes blind.
+"""
+
+FIRST_PLACE = """1. Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."`
+   (`pad:` presses the game's own pad, no window focus needed; `<s>:hold:ENTER:150` sends keys).
+   With the player's save, Continue or Load, never a new game. Wait in short steps
+   (`Start-Sleep 20`, then `live.ps1 frame <tag>` and look at the PNG), never minutes blind.
+   A problem seen on the Deck: start it with the Deck's settings (copy the Deck's settings file
+   over {run}\\{name}.toml first, and put the PC's back when you are done).
+2. Record it at once, before changing anything: `live.ps1 record 3` prints a frame trace (a .rxt
+   in {run}\\live\\trace). It is your fast loop: after a rebuild,
+   `live.ps1 play "<trace>" -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
+   draws those frames with the new build and exits in about 20 s (the images:
+   {run}\\live\\cap\\f<i>-native.png, from the second time through), with no game to reach again.
+   It is also this game's test scene: add a line `SCENE: <trace path>` after SUSPECTS (at most 2);
+   the app then checks that place after every later ReXNative change. If `play` says the trace no
+   longer fits the build ("record it again"), reach the place live once more and record again.
+   Skip the trace only when the place cannot be reached (and see 6.).
+"""
 
 
 SCENE_LINE = re.compile(r'^\s*SCENE:\s*(.+?)\s*$', re.M)
@@ -341,7 +371,7 @@ def parse_scenes(summary):
     return [m.group(1) for m in SCENE_LINE.finditer(summary or '')]
 
 
-def _snapshots_text(deck_snaps, run, name, hours=24):
+def _snapshots(deck_snaps, run, hours=24):
     """Os snapshots de depuração do jogador (o Y no menu de definições do ReXNative): os que vieram do
     Deck com o relatório e os tirados neste PC nas últimas `hours` horas (run/snapshots)."""
     import time
@@ -352,23 +382,28 @@ def _snapshots_text(deck_snaps, run, name, hours=24):
             d = os.path.join(root, n)
             if os.path.isdir(d) and time.time() - os.path.getmtime(d) < hours * 3600:
                 fs = sorted(os.listdir(d))
-                pc.append({'name': n, 'png': [os.path.join(d, f) for f in fs if f.endswith('.png')],
-                           'trace': [os.path.join(d, f) for f in fs if f.endswith('.rxt')], 'where': 'this PC'})
-    snaps = [dict(s, where='the Steam Deck') for s in deck_snaps] + pc
+                info = ''
+                if 'snapshot.txt' in fs:
+                    with open(os.path.join(d, 'snapshot.txt'), encoding='utf-8', errors='replace') as f:
+                        info = ' '.join(f.read().split())[:200]
+                pc.append({'name': n, 'info': info, 'where': 'this PC',
+                           'png': [os.path.join(d, f) for f in fs if f.endswith('.png')],
+                           'trace': [os.path.join(d, f) for f in fs if f.endswith('.rxt')]})
+    return [dict(s, where='the Steam Deck') for s in deck_snaps] + pc
+
+
+def _snapshots_text(snaps):
     if not snaps:
         return ''
-    lines = ''.join('  %s, on %s%s: picture %s; trace %s\n' % (
-        s['name'], s['where'], (' (%s)' % s['info']) if s.get('info') else '',
-        ', '.join(s['png']) or 'none', ', '.join(s['trace']) or 'none') for s in snaps)
-    return ('The player took debug snapshots in the game AT THE PLACE (the settings menu, then Y): the picture '
-            'is the frame as it was shown (look at it: it is what the player saw) and the trace holds the next '
-            'frames, as the game handed them to the renderer, recorded by that machine\'s build of this same '
-            'executable. Play the trace FIRST, before reaching the place: `live.ps1 play "<trace>" -Dir "%s" '
-            '-Exe %s.exe`. Wrong here too: work on it, it is your fast loop (no game to reach); list it as a '
-            'SCENE. Right here while the picture is wrong: the fault is in what differs there (on the Deck: the '
-            'AMD GPU and its driver under Proton, the Deck\'s settings), not in the game\'s data. If `play` says '
-            'the trace does not fit this build (the PC build changed since), reach the place live.\n%s'
-            % (run, name, lines))
+    when = lambda n: '%s-%s-%s %s:%s' % (n[0:4], n[4:6], n[6:8], n[9:11], n[11:13]) if len(n) >= 13 else n
+    lines = ''.join('  %s, on %s%s:\n    picture %s\n    trace %s\n' % (
+        when(s['name']), s['where'], (' (%s)' % s['info']) if s.get('info') else '',
+        ', '.join(s['png']) or 'none', ', '.join(s['trace']) or 'none (taken on the classic renderer)')
+        for s in snaps)
+    return ('- A snapshot the player took in the game AT THE PLACE (the settings menu, then Y). The picture is '
+            'the frame as it was shown: what the player saw, look at it first. The trace holds the next frames as '
+            'the game handed them to the renderer, recorded by that machine\'s build of this same executable:\n%s'
+            % lines)
 
 
 def _scenes_text(slug, run, name):
@@ -396,7 +431,10 @@ def investigate(job, work, report):
     g = games.info(work)
     name = g.get('exe') or '?'
     caps = report.get('captures') or []
-    captures = ('Captures the user attached (look at them):\n' + ''.join('  %s\n' % c for c in caps)) if caps else ''
+    snaps = _snapshots(report.get('snapshots') or [], os.path.join(work, 'run'))
+    snap_pngs = {os.path.normcase(p) for sn in snaps for p in sn['png']}
+    shown = [c for c in caps if os.path.normcase(c) not in snap_pngs]
+    captures = ('Captures the user attached (look at them):\n' + ''.join('  %s\n' % c for c in shown)) if shown else ''
     boot = g.get('boot') or {}
     boot_txt = ''
     if boot:
@@ -409,8 +447,8 @@ def investigate(job, work, report):
     if deck_files or report.get('where') == 'Steam Deck':
         boot_txt += ('Seen on the STEAM DECK (AMD GPU, Proton, its own settings: 1280x800 and the upscaler '
                      'on by default), not necessarily on the PC. Reproduce it on the PC with the Deck\'s '
-                     'settings (the Deck\'s copy of the game settings is below; deck/{name}-deck.toml '
-                     'in the work folder is what the kit installs) before concluding the PC is fine.\n'
+                     'settings before concluding the PC is fine: the Deck\'s settings file is below '
+                     '(deck-{name}.toml; deck/{name}-deck.toml in the work folder is what the kit installs).\n'
                      .replace('{name}', name))
         if deck_files:
             boot_txt += 'Files from the Deck (its game log, its settings, captures):\n' + ''.join(
@@ -423,13 +461,16 @@ def investigate(job, work, report):
                      % (sv.get('run'), sv['files'],
                         "the PC's own saves from before are in %s" % sv['backup'] if sv.get('backup')
                         else 'the PC had no saves of its own'))
-    boot_txt += _snapshots_text(report.get('snapshots') or [], os.path.join(work, 'run'), name)
     deck_log = os.path.join(work, 'deck', 'try.log')
     if os.path.exists(deck_log):
         boot_txt += 'Last try on the Steam Deck: log %s (captures in %s)\n' % (
             deck_log, os.path.join(work, 'deck'))
     limit = int(float(cfg.get('claude_timeout_min') or 120))
+    run_dir = os.path.join(work, 'run')
+    with_trace = any(sn['trace'] for sn in snaps)
     prompt = REPORT_PROMPT.format(
+        snapshot=_snapshots_text(snaps),
+        first_steps=(FIRST_SNAPSHOT if with_trace else FIRST_PLACE).format(run=run_dir, name=name),
         aim=max(15, min(45, limit // 2)), limit='%d minutes' % limit,
         title=g['title'], slug=g['slug'], work=work, run=os.path.join(work, 'run'), name=name,
         rexnative_dir=rex, kind=report.get('kind', '-'), where=report.get('where', '-'),
