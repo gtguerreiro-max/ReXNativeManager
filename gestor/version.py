@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.24.1'
+VERSION = '1.24.2'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.24.2', '2026-11-22', [
+        "Sem PC mode: downloads on the Deck no longer stay slow. archive.org's transfer could fall to "
+        "0.4 MB/s and stay there while a new connection did 2.3 to 3 MB/s (measured on the Deck). Like "
+        "the PC since 1.17.2, the Deck now measures the speed every 20 s and, when it falls far below "
+        "what the download had (or under 1 MB/s), opens a new connection from where it is. When new "
+        "connections are no faster three times in a row, the line is just slow and it stops trying.",
+    ]),
     ('1.24.1', '2026-11-22', [
         "Deck page: the pad moves one way at a time. Pressing down with the thumb a little to the side "
         "(the D-pad or the left stick) went down and sideways at once, so some games were hard to reach "
