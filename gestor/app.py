@@ -1512,7 +1512,8 @@ def remote_home(request: Request, refresh: bool = False, beat: bool = True, plug
         pc_free = round(pipeline.free_gb(config.load()['download_dir']), 1)
     except OSError:
         pc_free = None
-    return {'pc': lan.pc_name(), 'pc_free_gb': pc_free, 'gestor_appid': gid, 'version': versions.RUNNING,
+    return {'mode': 'pc',  # quem responde: o PC (o serviço do próprio Deck diz 'local')
+            'pc': lan.pc_name(), 'pc_free_gb': pc_free, 'gestor_appid': gid, 'version': versions.RUNNING,
             'linux_enabled': linuxbuild.cfg_ok()[0],
             'plugin_latest': versions.plugin_latest(), 'gestor_open': bool(_session.get('open')),
             # O PC chega ao Deck por SSH? (o vigia, de 20 em 20 s): sem isso, instalar espera.
@@ -1591,6 +1592,43 @@ def remote_closed():
     j = _submit_flush('the Manager closed')
     p = _submit_play()
     return {'flush': j and j.id, 'play': p and p.id}
+
+
+# O modo do Deck: PC, Sem PC ('local': o próprio Deck prepara e compila) ou Automático ('auto': o PC
+# quando responde, senão o Deck). Vive num ficheiro no Deck, que o lançador e o plugin leem.
+DECK_MODES = ('pc', 'local', 'auto')
+DECK_MODE_FILE = deckapp.DIR + '/mode'
+DECK_LOCAL = 'http://127.0.0.1:8370'
+
+
+@app.get('/api/remote/mode')
+def remote_mode():
+    try:
+        r = deck.Deck().ssh('cat ~/%s 2>/dev/null || true' % DECK_MODE_FILE, timeout=25)
+    except (RuntimeError, subprocess.TimeoutExpired) as e:
+        raise HTTPException(503, 'the PC could not read the mode on the Deck: %s' % e)
+    mode = (r.stdout or '').strip()
+    return {'mode': mode if mode in DECK_MODES else 'pc', 'serving': 'pc'}
+
+
+@app.post('/api/remote/mode')
+def remote_mode_set(body: dict = Body(...)):
+    mode = str(body.get('mode') or '')
+    if mode not in DECK_MODES:
+        raise HTTPException(400, 'unknown mode: %s' % mode[:20])
+    try:
+        r = deck.Deck().ssh('mkdir -p ~/%s && echo %s > ~/%s && echo saved' % (
+            deckapp.DIR, mode, DECK_MODE_FILE), timeout=25)
+    except (RuntimeError, subprocess.TimeoutExpired) as e:
+        raise HTTPException(503, 'the PC could not reach the Deck: %s' % e)
+    if 'saved' not in (r.stdout or ''):
+        raise HTTPException(502, 'the Deck did not save the mode: %s' % (r.stderr or r.stdout)[-200:])
+    # Sem PC: a página passa já para o serviço do Deck; PC e Automático: fica aqui. A sessão do
+    # Gestor fecha aqui sem esvaziar os atalhos pendentes: o Gestor continua aberto no Deck (no
+    # serviço local) e reiniciar o Steam fechava-o. Ficam para o próximo fecho com o PC.
+    if mode == 'local':
+        _session['open'] = False
+    return {'mode': mode, 'serving': 'pc', 'go': DECK_LOCAL + '/deck' if mode == 'local' else None}
 
 
 @app.post('/api/remote/play/{slug}')

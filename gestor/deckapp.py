@@ -15,7 +15,8 @@ from . import config, deck, lan, state
 NAME = 'Gestor ReXNative'
 DIR = '.local/share/gestor-rexnative'  # na pasta do utilizador deck
 KIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deckkit')
-VERSION = 2  # o lançador (deckkit/): sobe quando os ficheiros mudam; a app avisa o Deck que tem um antigo
+VERSION = 3  # o lançador (deckkit/): sobe quando os ficheiros mudam; a app avisa o Deck que tem um antigo
+# 3: o modo (PC, Sem PC, Automático) no ficheiro mode, ao lado do gestor.conf
 
 GREEN = (95, 191, 63)
 FONTS = r'C:\Windows\Fonts'
@@ -210,6 +211,13 @@ def install_job(job, servers):
                input_bytes=data, timeout=120)
     if 'files sent' not in r.stdout:
         raise RuntimeError('the transfer failed: %s' % (r.stderr or r.stdout)[-300:])
+    # Um Deck que estava no modo Sem PC (instalado sem PC) passa a Automático: o PC quando está
+    # ligado, o próprio Deck quando não.
+    r = dk.ssh('m=%s/mode; if [ "$(cat "$m" 2>/dev/null)" = local ]; then echo auto > "$m"; echo now-auto; fi'
+               % deck.q(gdir), timeout=30)
+    if 'now-auto' in r.stdout:
+        job.event('info', 'This Deck was set to work without the PC: it is now Automatic (the PC when it '
+                          'answers, the Deck when not)')
 
     # O atalho no Steam (fechado uma vez), se ainda não houver.
     listing = dk.listing(light=True)

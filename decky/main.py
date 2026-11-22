@@ -1,6 +1,7 @@
-"""Gestor ReXNative no menu rápido (Decky): pergunta à app do PC pelos pedidos e pelo espaço do Deck,
-com o token que o Gestor no Deck já tem (~/.local/share/gestor-rexnative/gestor.conf, escrito pela
-app do PC quando o instalou). Corre como o utilizador deck; não guarda nada."""
+"""Gestor ReXNative no menu rápido (Decky): pergunta pelos pedidos e pelo espaço do Deck a quem faz o
+trabalho: a app do PC, com o token que o Gestor no Deck já tem (~/.local/share/gestor-rexnative/
+gestor.conf, escrito pela app do PC quando o instalou), ou o próprio Deck (o modo Sem PC, em
+127.0.0.1:8370), conforme o ficheiro mode ao lado. Corre como o utilizador deck; não guarda nada."""
 import asyncio
 import hashlib
 import json
@@ -10,7 +11,12 @@ import urllib.request
 
 import decky
 
-CONF = os.path.join(decky.DECKY_USER_HOME, '.local', 'share', 'gestor-rexnative', 'gestor.conf')
+SHARE = os.path.join(decky.DECKY_USER_HOME, '.local', 'share', 'gestor-rexnative')
+CONF = os.path.join(SHARE, 'gestor.conf')
+# pc, local ou auto: quem faz o trabalho (escrito pelo serviço do Deck ou pela app do PC, nunca no
+# gestor.conf, que o PC reescreve).
+MODE = os.path.join(SHARE, 'mode')
+LOCAL = 'http://127.0.0.1:8370'  # o modo Sem PC: o serviço no próprio Deck
 
 
 def _version():
@@ -33,7 +39,8 @@ ZIP = os.path.join(decky.DECKY_USER_HOME, 'Downloads', 'gestor-rexnative-decky-%
 
 
 def _conf():
-    """Os endereços do PC e o token deste Deck (gestor.conf, escrito pela app do PC)."""
+    """Os endereços do PC e o token deste Deck (gestor.conf, escrito pela app do PC; num Deck sem PC,
+    URLS vazio e TOKEN="local")."""
     urls, token = [], ''
     try:
         with open(CONF, encoding='utf-8') as f:
@@ -46,6 +53,30 @@ def _conf():
     except OSError:
         pass
     return urls, token
+
+
+def _mode(urls):
+    """O modo escolhido: o ficheiro mode; sem ele (ou ilegível), o PC se há moradas do PC, senão o Deck."""
+    try:
+        with open(MODE, encoding='utf-8') as f:
+            m = f.read().strip()
+    except (OSError, ValueError):
+        m = ''
+    if m in ('pc', 'local', 'auto'):
+        return m
+    return 'pc' if urls else 'local'
+
+
+def _servers():
+    """A quem perguntar, por ordem (pc: o PC; local: este Deck; auto: o PC, depois este Deck), o token
+    e o modo."""
+    urls, token = _conf()
+    mode = _mode(urls)
+    if mode == 'local':
+        urls = [LOCAL]
+    elif mode == 'auto':
+        urls = [u for u in urls if u != LOCAL] + [LOCAL]
+    return urls, token, mode
 
 
 def vkey(v):
@@ -166,13 +197,15 @@ class Plugin:
     good = None  # o endereço do PC que respondeu da última vez
 
     def _req(self, path, method='GET'):
-        urls, token = _conf()
+        # Um Deck sem PC tem TOKEN="local" (e URLS vazio): está instalado.
+        urls, token, _ = _servers()
         if not token:
             raise LookupError('sem Gestor')
         order = ([self.good] if self.good in urls else []) + [u for u in urls if u != self.good]
         err = refusal = None
         for u in order:
-            headers = {'X-Gestor-Token': token}
+            # O serviço do Deck não usa token: o do PC fica para o PC.
+            headers = {} if u == LOCAL else {'X-Gestor-Token': token}
             if method != 'GET':
                 headers['X-Gestor'] = '1'
             req = urllib.request.Request(u + path, method=method, headers=headers,
@@ -194,16 +227,18 @@ class Plugin:
         raise refusal or PcError(str(err) if err else 'no address of the PC')
 
     def _status(self):
+        # setting: the mode chosen (the mode file); mode: who answered (home.mode, "pc" or "local").
+        setting = _servers()[2]
         try:
             h = self._req('/api/remote/home?beat=false' + ('&plugin=' + VERSION if VERSION else ''))
         except LookupError:
             return {'installed': False, 'version': VERSION}
         except Exception as e:  # noqa: BLE001
             return {'installed': True, 'online': False, 'error': str(e)[:200], 'version': VERSION,
-                    'reason': getattr(e, 'reason', 'unreachable')}
+                    'reason': getattr(e, 'reason', 'unreachable'), 'setting': setting}
         if not isinstance(h, dict):
             return {'installed': True, 'online': False, 'error': 'unexpected answer', 'version': VERSION,
-                    'reason': 'error'}
+                    'reason': 'error', 'setting': setting}
         space = (h.get('deck') or {}).get('space')
         orders, live = _orders(h.get('orders'))
         latest = h.get('plugin_latest')
@@ -212,6 +247,7 @@ class Plugin:
         # What an older app on the PC does not send (pc_work, ssh, the microSD) goes as None: the
         # panel leaves that part out.
         return {'installed': True, 'online': True, 'pc': h.get('pc'), 'app_version': h.get('version'),
+                'mode': 'local' if h.get('mode') == 'local' else 'pc', 'setting': setting,
                 'deck_free': _free(space, 'interno'), 'sd_free': _free(space, 'sd'),
                 'ssh': h.get('ssh'), 'pc_work': _work(h.get('pc_work')),
                 'orders': orders, 'active': live, 'pending': h.get('pending') or {},
@@ -233,10 +269,11 @@ class Plugin:
             return {'error': str(e)[:200]}
 
     def _download(self):
-        """O ZIP do plugin que está no PC, para ~/Downloads (onde a Decky o vai buscar). (versão, sha256)"""
+        """O ZIP do plugin que está no PC (ou no serviço do Deck), para ~/Downloads (onde a Decky o vai
+        buscar). (versão, sha256)"""
         h = self._req('/api/remote/home?beat=false')
         version = h.get('plugin_latest') or 'dev'
-        urls, _ = _conf()
+        urls = _servers()[0]
         order = ([self.good] if self.good in urls else []) + [u for u in urls if u != self.good]
         err = None
         for u in order:
@@ -257,7 +294,7 @@ class Plugin:
         raise ConnectionError(str(err))
 
     async def update(self):
-        """O botão Atualizar (já confirmado no painel): traz o plugin novo do PC e a Decky instala-o e
+        """O botão Atualizar (já confirmado no painel): traz o plugin novo (do PC ou do Deck) e a Decky instala-o e
         recarrega o painel uns segundos depois."""
         try:
             version, sha = await asyncio.get_event_loop().run_in_executor(None, self._download)
@@ -267,7 +304,7 @@ class Plugin:
             return {'error': str(e)[:200]}
 
     async def _main(self):
-        decky.logger.info('Gestor ReXNative: a usar %s', CONF)
+        decky.logger.info('Gestor ReXNative: a usar %s (modo %s)', CONF, _servers()[2])
 
     async def _unload(self):
         pass

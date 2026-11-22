@@ -8,10 +8,38 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.22.0'
+VERSION = '1.24.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.24.1', '2026-11-22', [
+        "Deck page: the pad moves one way at a time. Pressing down with the thumb a little to the side "
+        "(the D-pad or the left stick) went down and sideways at once, so some games were hard to reach "
+        "in the catalogue. Now the direction you hold wins until you let go, the stick follows only its "
+        "stronger axis, and a diagonal pressed at once goes up or down.",
+        "Held, the pad repeats a little slower (about 8 moves a second), so it stops where you want.",
+        "One press seen twice (as the pad and as an arrow key) moves only once.",
+    ]),
+    ('1.24.0', '2026-11-22', [
+        "Report a problem in the Sem PC mode: Claude on the Deck now debugs the way it does on the PC, "
+        "with ReXNative's scripts/live.sh (live.ps1's commands on Linux and Proton): a live game kept "
+        "running between experiments, frame captures with the Xenos renderer's image of the same frame "
+        "beside them, the pad, the control file, frame traces recorded and played, compare, audit, idle "
+        "and oracle. The game runs in a headless gamescope: never on the screen, muted, and never Steam "
+        "or a game you play. Its own instructions for the Deck: the player's snapshot first, few "
+        "rebuilds (5 to 7 minutes each there). Needs ReXNative 687f083 or later on the Deck.",
+        "The Deck's kit gets a Python with numpy and Pillow for those scripts (compare, oracle).",
+    ]),
+    ('1.23.0', '2026-11-22', [
+        'The Deck works without the PC: in the new Sem PC mode the Deck itself downloads, prepares, '
+        'builds, tests and installs your games, with the same Manager page and Decky plugin. On the Deck, '
+        'the new Settings tab chooses PC, Without PC or Automatic (the PC when it answers, the Deck when it '
+        'does not). The Deck side lives in standalone/ (installed on the Deck with standalone/install.sh) '
+        'and stays out of the public copy.',
+        'Decky plugin 1.9.0 and Deck launcher 3 follow the mode; when the chosen side does not answer, the '
+        'launcher offers the other one. Installing the Manager from the PC on a Deck set to work without '
+        'the PC turns it to Automatic.',
+    ]),
     ('1.22.0', '2026-11-21', [
         'Delete a game from this PC: on the game page, This PC copy, Delete from this PC. It removes the '
         'prepared and built game folder (its size is shown first), after a copy of the saves of this PC in '

@@ -22,7 +22,8 @@
   .k { display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-weight: 700;
     font-size: 15px; color: #0b0e10; }
   .ka { background: #6cc24a; } .kb { background: #e0524a; }
-  #fail { display: none; } .small { font-size: 15px; }
+  #fail { display: none; } .small { font-size: 15px; } .hide { display: none !important; }
+  button .ka { display: none; } button.on .ka { display: inline-grid; }
 </style>
 </head>
 <body>
@@ -30,21 +31,35 @@
   <h1><span>ReXNative</span> Manager</h1>
   <div id="wait"><div class="spin" style="margin:0 auto 16px"></div><p id="what">Looking for the Manager on the PC…</p></div>
   <div id="fail">
-    <p style="color:var(--text);font-size:21px;margin-bottom:8px">Could not find the Manager on the PC</p>
-    <p>Turn on the PC and open ReXNative Manager (<b>iniciar.bat</b>). The Deck and the PC must be on the same network.
+    <p id="ftitle" style="color:var(--text);font-size:21px;margin-bottom:8px">Could not find the Manager on the PC</p>
+    <p id="ftext">Turn on the PC and open ReXNative Manager (<b>iniciar.bat</b>). The Deck and the PC must be on the same network.
       If the PC changed network or name, reinstall the Manager on the Deck from the PC app's Settings (Deck mode).</p>
+    <p id="fmore" style="margin-top:8px"></p>
     <p class="small" id="tried" style="margin-top:8px"></p>
     <div class="row" style="justify-content:center">
+      <button id="alt" class="hide"><span class="k ka">A</span> <span id="altt">Open without the PC</span></button>
       <button id="retry" class="on"><span class="k ka">A</span> Try again</button>
       <button id="quit"><span class="k kb">B</span> Exit</button>
     </div>
   </div>
 </main>
 <script>
+// Quem faz o trabalho: a app do PC, o Deck (o modo Sem PC, aqui em LOCAL) ou o PC e depois o Deck
+// (Automático). O gestor.sh lê o modo e manda a lista por ordem (u) e as moradas do PC (p).
+const LOCAL = 'http://127.0.0.1:8370';
 const P = new URLSearchParams(location.hash.slice(1));
 const token = P.get('t') || '';
 const urls = (P.get('u') || '').split(',').filter(Boolean);
-let looking = false, auto = null, started = Date.now();
+const pcs = (P.get('p') !== null ? P.get('p') : P.get('u') || '').split(',').filter(u => u && u !== LOCAL);
+const mode = ['pc', 'local', 'auto'].includes(P.get('m')) ? P.get('m') : (pcs.length ? 'pc' : 'local');
+if (mode !== 'pc' && !urls.includes(LOCAL)) urls.push(LOCAL);  // um gestor.sh antigo só mandava as do PC
+// As que não estão na lista: oferecidas (um botão) quando nenhuma da lista responde e uma destas sim.
+const others = pcs.concat([LOCAL]).filter(u => !urls.includes(u));
+let looking = false, auto = null, started = Date.now(), alt = null;
+const $ = id => document.getElementById(id);
+const deckOnly = urls.length > 0 && urls.every(u => u === LOCAL);  // Sem PC, ou Automático sem PC
+$('what').textContent = deckOnly ? 'Opening the Manager on this Deck…'
+  : mode === 'auto' ? 'Looking for the Manager on the PC, then on this Deck…' : $('what').textContent;
 
 async function ping(u) {
   const c = new AbortController();
@@ -55,31 +70,68 @@ async function ping(u) {
     return d.app === 'gestor-rexnative';
   } catch (e) { return false; } finally { clearTimeout(t); }
 }
-async function look() {
+// O Deck não leva o token do PC (o serviço do Deck não o usa).
+function go(u) { location.replace(u === LOCAL ? LOCAL + '/deck' : u + '/deck#t=' + encodeURIComponent(token)); }
+// quiet: a procura sozinha de 5 em 5 s, com o ecrã do "não encontrei" à vista (e o botão que lá está).
+async function look(quiet) {
   if (looking) return;
   looking = true;
-  document.getElementById('fail').style.display = 'none';
-  document.getElementById('wait').style.display = '';
-  const found = await Promise.all(urls.map(u => ping(u).then(ok => ok ? u : null)));
-  const u = found.find(Boolean);
+  if (!quiet) { $('fail').style.display = 'none'; $('wait').style.display = ''; }
+  const [found, spare] = await Promise.all([urls, others].map(l => Promise.all(l.map(u => ping(u).then(ok => ok ? u : null)))));
   looking = false;
-  if (u) { location.replace(u + '/deck#t=' + encodeURIComponent(token)); return; }
-  document.getElementById('wait').style.display = 'none';
-  document.getElementById('fail').style.display = '';
-  document.getElementById('tried').textContent = 'Looked at ' + urls.join(', ');
-  // Volta a procurar sozinho durante 3 minutos (o PC pode estar a acordar).
+  const u = found.find(Boolean);
+  if (u) { go(u); return; }
+  alt = spare.find(Boolean) || null;
+  failed();
+  // Volta a procurar sozinho durante 3 minutos (o PC pode estar a acordar, o serviço a arrancar).
   clearTimeout(auto);
-  if (Date.now() - started < 180000) auto = setTimeout(look, 5000);
+  if (Date.now() - started < 180000) auto = setTimeout(() => look(true), 5000);
+}
+const PC_TEXT = $('ftext').innerHTML;
+function failed() {
+  const deckAlt = alt === LOCAL;
+  let title, text, more = '';
+  if (deckOnly) {
+    title = 'The Manager on this Deck is not answering';
+    text = 'The Sem PC service on this Deck did not answer: it may still be starting, so wait a few seconds. '
+      + 'If it keeps failing, restart the Deck or install the Sem PC mode again.';
+    if (alt) more = 'The Manager on the PC answers: open it there. Its Settings tab can switch this Deck back to the PC.';
+  } else if (!pcs.length) {
+    title = 'No PC is set up for this Deck';
+    text = "Install the Manager on the Deck from the PC app's Settings (Deck mode).";
+    more = deckAlt ? 'The Sem PC mode is on this Deck: open the Manager without the PC. In its Settings, Without PC or Automatic opens it like this by itself.'
+      : 'Or install the Sem PC mode on this Deck to use the Manager without a PC.';
+  } else {
+    title = mode === 'auto' ? 'Could not find the Manager on the PC or on this Deck' : 'Could not find the Manager on the PC';
+    text = PC_TEXT;
+    if (mode === 'auto') more = 'The Manager on this Deck (Sem PC mode) did not answer either: it may still be starting. If it is not installed, install the Sem PC mode on this Deck.';
+    else if (deckAlt) more = 'The Sem PC mode on this Deck answers: open the Manager without the PC. Automatic mode (in the Manager\'s Settings) does this by itself when the PC does not answer.';
+  }
+  $('ftitle').textContent = title;
+  $('ftext').innerHTML = text;
+  $('fmore').textContent = more;
+  $('fmore').classList.toggle('hide', !more);
+  $('altt').textContent = deckAlt ? 'Open without the PC' : 'Open on the PC';
+  const was = $('alt').classList.contains('hide');
+  $('alt').classList.toggle('hide', !alt);
+  if (alt && was) setFocus('alt');
+  else if (!alt && focus === 'alt') setFocus('retry');
+  $('tried').textContent = urls.length ? 'Looked at ' + urls.join(', ') : '';
+  $('wait').style.display = 'none';
+  $('fail').style.display = '';
 }
 function quit() { window.close(); }
-document.getElementById('retry').onclick = () => { started = Date.now(); look(); };
-document.getElementById('quit').onclick = quit;
+$('retry').onclick = () => { started = Date.now(); look(); };
+$('quit').onclick = quit;
+$('alt').onclick = () => { if (alt) go(alt); };
 let focus = 'retry';
-function setFocus(id) { focus = id; for (const b of ['retry', 'quit']) document.getElementById(b).classList.toggle('on', b === id); }
+const buttons = () => ['alt', 'retry', 'quit'].filter(b => !$(b).classList.contains('hide'));
+function setFocus(id) { focus = id; for (const b of ['alt', 'retry', 'quit']) $(b).classList.toggle('on', b === id); }
+function step(d) { const bs = buttons(); setFocus(bs[(bs.indexOf(focus) + d + bs.length) % bs.length]); }
 addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key === 'Backspace') quit();
-  else if (e.key === 'Enter' || e.key === ' ') document.getElementById(focus).click();
-  else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') setFocus(focus === 'retry' ? 'quit' : 'retry');
+  else if (e.key === 'Enter' || e.key === ' ') $(focus).click();
+  else if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') step(e.key === 'ArrowLeft' ? -1 : 1);
 });
 let prev = [];
 function pad() {
@@ -90,9 +142,10 @@ function pad() {
     if (!g) continue;
     g.buttons.forEach((x, i) => { if (x.pressed) b[i] = true; });
   }
-  if (b[0] && !prev[0]) document.getElementById(focus).click();
+  if (b[0] && !prev[0]) $(focus).click();
   if (b[1] && !prev[1]) quit();
-  if ((b[14] && !prev[14]) || (b[15] && !prev[15])) setFocus(focus === 'retry' ? 'quit' : 'retry');
+  if (b[14] && !prev[14]) step(-1);
+  if (b[15] && !prev[15]) step(1);
   prev = b;
   requestAnimationFrame(pad);
 }

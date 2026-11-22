@@ -1,6 +1,7 @@
 // ReXNative Manager in the Steam Deck's quick access menu (…): what the PC is doing, the requests
 // (the PC downloading, building and sending games) with their progress, a notice when a game is
-// ready, the games played last and a button to open the Manager.
+// ready, the games played last and a button to open the Manager. Without a PC (the Manager's Sem PC
+// mode) this Deck does the work, and the texts say so.
 import {
   ButtonItem,
   ConfirmModal,
@@ -38,6 +39,9 @@ type Status = {
   reason?: string; ssh?: boolean | null; pc_work?: PcWork | null; orders?: Order[]; active?: number;
   pending?: { add?: number; remove?: number; titles?: string[] }; gestor_appid?: number; version?: string;
   app_version?: string; plugin_latest?: string; plugin_update?: boolean; gestor_open?: boolean; games?: Game[];
+  // Who answered (home.mode: "pc", or "local" for the service on this Deck), and the mode chosen
+  // (the mode file: "pc", "local" or "auto").
+  mode?: string; setting?: string;
 };
 
 const getStatus = callable<[], Status>("status");
@@ -64,28 +68,33 @@ const when = (t?: string) => {
   return (t.slice(0, 10) === today ? "" : `${MONTHS[+t.slice(5, 7) - 1] || ""} ${+t.slice(8, 10)}, `) + t.slice(11, 16);
 };
 
-const STAGE: Record<string, string> = {
-  download: "Downloading", build: "Building on the PC", deck: "Sending to the Deck",
+// Who does the work: the PC, or this Deck itself (the last answer came from the service on the Deck:
+// home.mode "local"). Kept with the games, for the first look before an answer.
+let here = false;
+const on = () => here ? "on this Deck" : "on the PC";
+
+const STAGE = (): Record<string, string> => ({
+  download: "Downloading", build: "Building " + on(), deck: here ? "Installing on the Deck" : "Sending to the Deck",
   library: "On the Deck: joins the library when you exit the Manager", done: "In the library",
-};
+});
 // The steps of a request to install, and of a report, while they run.
 const STEPS = ["download", "build", "deck"];
-const REPORT: Record<string, string> = {
-  deck: "Collecting the log and settings on the Deck", claude: "Claude is investigating on the PC",
-  deck_send: "Sending the fixed version to the Deck",
-};
+const REPORT = (): Record<string, string> => ({
+  deck: "Collecting the log and settings on the Deck", claude: "Claude is investigating " + on(),
+  deck_send: here ? "Installing the fixed version" : "Sending the fixed version to the Deck",
+});
 // Besides the requests to install: reports and what was asked from the Manager (rebuild, send, delete).
 const KIND: Record<string, string> = {
   "deck-report": "Report", pipeline: "Rebuild", deck: "Send", "deck-delete": "Delete", "deck-flush": "Library", report: "Report",
   "deck-gestor": "Launcher", "deck-restore": "Restore", "deck-plugin": "Plugin", "deck-batch": "All",
   "linux-build": "Linux build", "linux-deck": "Linux to Deck", "linux-runner": "Linux / Windows",
 };
-const DOING: Record<string, string> = {
-  pipeline: "Rebuilding on the PC", deck: "Sending to the Deck", "deck-delete": "Deleting from the Deck",
+const DOING = (): Record<string, string> => ({
+  pipeline: "Rebuilding " + on(), deck: "Sending to the Deck", "deck-delete": "Deleting from the Deck",
   "deck-flush": "Updating the library", "deck-gestor": "Updating the launcher", "deck-restore": "Restoring on the Deck",
-  "deck-plugin": "Installing the plugin", "linux-build": "Building for Linux on the PC", "linux-deck": "Sending the Linux build to the Deck",
-};
-const FIXING = "Claude is fixing a step that failed on the PC";
+  "deck-plugin": "Installing the plugin", "linux-build": "Building for Linux " + on(), "linux-deck": "Sending the Linux build to the Deck",
+});
+const FIXING = () => "Claude is fixing a step that failed " + on();
 const active = (o: Order) => o.status === "running" || o.status === "queued";
 const isOrder = (o: Order) => !o.kind || o.kind === "order";
 
@@ -98,7 +107,7 @@ const orderName = (o: Order) => baseName(o) + (kindOf(o) ? " · " + kindOf(o) : 
 // How a request that went well ended. named: with what it was ("Send: ..."), for a notice; beside
 // its name on the panel, which already says so, without.
 function doneText(o: Order, named = true): string {
-  if (isOrder(o)) return STAGE[o.stage || "done"] || "Ready";
+  if (isOrder(o)) return STAGE()[o.stage || "done"] || "Ready";
   if (o.kind === "deck-batch") return o.last || "Done";
   const what = o.kind === "deck-report" ? (o.report || {}).status || "done" : o.last || "done";
   return named ? (KIND[o.kind || ""] || "Done") + ": " + what : what.charAt(0).toUpperCase() + what.slice(1);
@@ -109,7 +118,7 @@ function endText(o: Order): string {
   if (o.status === "ok") return doneText(o, false);
   if (o.status === "failed") return "Failed: " + (o.error || "see the Manager");
   if (o.status === "cancelled") return "Cancelled";
-  if (o.status === "interrupted") return "Interrupted (the PC app closed)";
+  if (o.status === "interrupted") return here ? "Interrupted (the Manager on this Deck stopped)" : "Interrupted (the PC app closed)";
   return o.status;
 }
 
@@ -120,10 +129,11 @@ const waitingOf = (o: Order): Waiting | null | undefined =>
 const waits = (o: Order) => o.status === "queued" || !!waitingOf(o);
 function waitText(w?: Waiting | null): string {
   if (!w) return "Queued";
-  if (w.restart) return "Continues when the Manager on the PC has restarted";
+  const who = here ? "this Deck" : "the PC";
+  if (w.restart) return `Continues when the Manager ${on()} has restarted`;
   const n = w.ahead ? `${w.ahead} more request${w.ahead > 1 ? "s" : ""} before this one` : "";
-  if (!w.title) return "Waiting: " + (n || "the PC is busy");
-  return `Waiting for the PC to finish ${w.title}${w.for_s != null ? " (running for " + eta(w.for_s) + ")" : ""}${n ? ", then " + n : ""}`;
+  if (!w.title) return "Waiting: " + (n || who + " is busy");
+  return `Waiting for ${who} to finish ${w.title}${w.for_s != null ? " (running for " + eta(w.for_s) + ")" : ""}${n ? ", then " + n : ""}`;
 }
 
 // A request the PC is working on: the stage (it changes a few times), the detail of the moment (it
@@ -139,18 +149,18 @@ function live(o: Order): Live {
   let op = bytes || [said ? "" : p.step_pt, p.phase].filter(Boolean).join(": ");
   if (p.pstep === "claude" || (!isOrder(o) && p.step === "claude")) {
     // While the assistant fixes a step: that, not the command it is running.
-    head = FIXING;
+    head = FIXING();
     op = "";
   } else if (p.batch) {
     head = `${p.batch.i + 1} of ${p.batch.n}: ${p.batch.current || ""}${p.batch.failed ? ` · ${p.batch.failed} failed` : ""}`;
   } else if (o.kind === "deck-report") {
-    head = REPORT[o.stage || ""] || REPORT.deck;
+    head = REPORT()[o.stage || ""] || REPORT().deck;
     op = op || o.last || "";
   } else if (isOrder(o)) {
     const i = STEPS.indexOf(o.stage || "");
-    head = i < 0 ? (o.stage ? "Working on the PC" : "Starting") : `Step ${i + 1} of ${STEPS.length} · ${STAGE[STEPS[i]]}`;
+    head = i < 0 ? (o.stage ? "Working " + on() : "Starting") : `Step ${i + 1} of ${STEPS.length} · ${STAGE()[STEPS[i]]}`;
   } else {
-    head = DOING[o.kind || ""] || KIND[o.kind || ""] || "Working on the PC";
+    head = DOING()[o.kind || ""] || KIND[o.kind || ""] || "Working " + on();
     op = op || o.last || "";
   }
   const time = p.total && p.eta != null && (p.done || 0) < p.total ? eta(p.eta) + " left"
@@ -180,17 +190,18 @@ let asked = 0;                   // when the question on its way was asked (0: n
 const subs = new Set<() => void>();
 
 // The games and the Manager's shortcut stay known between sessions: with the PC off, Play still works.
-type Kept = { gestor_appid?: number; games?: Game[] };
+type Kept = { gestor_appid?: number; games?: Game[]; local?: boolean };
 const KEEP = "gestor-rexnative.kept";
 let kept: Kept = {};
 try {
   const k = JSON.parse(localStorage.getItem(KEEP) || "{}");
-  if (k && typeof k === "object") kept = { gestor_appid: k.gestor_appid, games: Array.isArray(k.games) ? k.games : [] };
+  if (k && typeof k === "object") kept = { gestor_appid: k.gestor_appid, games: Array.isArray(k.games) ? k.games : [], local: !!k.local };
 } catch (e) {
   // nothing kept
 }
+here = !!kept.local;
 function keep(s: Status) {
-  const k: Kept = { gestor_appid: s.gestor_appid, games: s.games || [] };
+  const k: Kept = { gestor_appid: s.gestor_appid, games: s.games || [], local: s.mode === "local" };
   const raw = JSON.stringify(k);
   if (raw === JSON.stringify(kept)) return;
   kept = k;
@@ -235,6 +246,7 @@ async function poll() {
       // Decky still starting (or its side of the plugin gone): the next one may answer
     }
     if (s && s.installed && s.online) {
+      here = s.mode === "local";
       try { notify(s); } catch (e) { /* a notice that fails does not stop the panel */ }
       good = s;
       goodAt = Date.now();
@@ -412,19 +424,21 @@ function Ended({ o }: { o: Order }) {
 }
 
 // What the PC is doing (the build lane and the report lane), one line each: why a request waits.
+// Without the PC, what this Deck is doing.
 function Pc({ s, held }: { s: Status; held: boolean }) {
   const w = s.pc_work;
   const run = (w && w.running) || [];
   const working = (s.orders || []).some(o => o.status === "running" && !waits(o));
+  const deck = s.mode === "local";
   return (
-    <Field label={<div style={line}><Dot color={held ? C.warn : run.length ? C.blue : C.ok} /><span style={{ ...clamp(1), flex: 1, minWidth: 0 }}>PC {s.pc || ""}</span></div>}
+    <Field label={<div style={line}><Dot color={held ? C.warn : run.length ? C.blue : C.ok} /><span style={{ ...clamp(1), flex: 1, minWidth: 0 }}>{deck ? "This Deck" : `PC ${s.pc || ""}`}</span></div>}
       description={<>
         {held && <div style={{ color: C.warn }}>No answer for {eta((Date.now() - goodAt) / 1000)}: trying again…</div>}
         {run.map((r, i) => <div key={i} style={clamp(1)}>{i ? "and " : "Working on "}{r.title || "a job"}{r.for_s != null ? ` (${eta(r.for_s)})` : ""}</div>)}
-        {!run.length && <div>{w && !working ? "The PC is free" : "Connected"}</div>}
+        {!run.length && <div>{deck ? (working ? "Working" : "Nothing running") : w && !working ? "The PC is free" : "Connected"}</div>}
         {w && !!w.queued && <div>{w.queued} job{w.queued > 1 ? "s" : ""} waiting</div>}
         {w && w.restart && <div style={clamp(2)}>It restarts after the running jobs, the queue continues afterwards</div>}
-        {s.ssh === false && <div style={{ ...clamp(2), color: C.warn }}>The PC cannot reach the Deck (SSH): sending waits</div>}
+        {!deck && s.ssh === false && <div style={{ ...clamp(2), color: C.warn }}>The PC cannot reach the Deck (SSH): sending waits</div>}
       </>} />
   );
 }
@@ -438,8 +452,17 @@ const WHY: Record<string, [string, string]> = {
   error: ["The PC answered with an error", ""],
   plugin: ["The plugin is not answering", "Reload it in Decky's settings, or restart Steam."],
 };
+// Without the PC (the mode chosen is "local"), or with neither ("auto"), the service on this Deck is
+// the one not answering.
+const WHY_DECK: [string, string] = ["No connection to the Manager on this Deck", "It may still be starting. If it keeps failing, restart the Deck or install the Sem PC mode again."];
+const WHY_BOTH: [string, string] = ["No connection to the PC or to this Deck", "Turn on the PC and open the Manager there, or check the Sem PC mode on this Deck."];
+const WHY_DECK_ERR: [string, string] = ["The Manager on this Deck answered with an error", ""];
 function NoPc({ s }: { s: Status }) {
-  const why = WHY[s.reason || ""] || WHY.unreachable;
+  const r = s.reason || "unreachable";
+  const why = r === "plugin" ? WHY.plugin
+    : s.setting === "local" ? (r === "unreachable" ? WHY_DECK : WHY_DECK_ERR)
+    : s.setting === "auto" && r === "unreachable" ? WHY_BOTH
+    : WHY[r] || WHY.unreachable;
   const said = s.reason === "error" || s.reason === "refused" ? s.error : "";
   return (
     <Field label={<div style={line}><Dot color={C.bad} /><span style={{ ...clamp(2), flex: 1, minWidth: 0 }}>{why[0]}</span></div>}
@@ -461,10 +484,10 @@ function Manager({ appid }: { appid?: number }) {
 
 function Update({ s }: { s: Status }) {
   return (
-    <ButtonItem layout="below" description={`This plugin is v${s.version}; the PC has v${s.plugin_latest}.`}
+    <ButtonItem layout="below" description={`This plugin is v${s.version}; ${s.mode === "local" ? "the Manager on this Deck" : "the PC"} has v${s.plugin_latest}.`}
       onClick={() => showModal(
         <ConfirmModal strTitle={`Update the plugin to v${s.plugin_latest}?`}
-          strDescription="Decky installs the new version from the PC and reloads this panel (a few seconds)."
+          strDescription={`Decky installs the new version from ${s.mode === "local" ? "the Manager on this Deck" : "the PC"} and reloads this panel (a few seconds).`}
           strOKButtonText="Update" strCancelButtonText="Not now"
           onOK={async () => {
             toaster.toast({ title: "ReXNative Manager", body: `Updating the plugin to v${s.plugin_latest}…` });
@@ -539,7 +562,7 @@ function Games({ games }: { games: Game[] }) {
 }
 
 function About({ s, online }: { s: Status; online: boolean }) {
-  const versions = [s.version ? "Plugin v" + s.version : "", online && s.app_version ? "PC app v" + s.app_version : ""].filter(Boolean).join(" · ");
+  const versions = [s.version ? "Plugin v" + s.version : "", online && s.app_version ? (s.mode === "local" ? "Manager v" : "PC app v") + s.app_version : ""].filter(Boolean).join(" · ");
   if (!online || s.deck_free == null) return versions ? <PanelSection><PanelSectionRow><Field description={versions} focusable={true} /></PanelSectionRow></PanelSection> : null;
   return (
     <PanelSection>
@@ -580,13 +603,13 @@ function Content() {
 const MOST = 4;  // requests in progress on the panel; the Manager has them all
 function Panel() {
   const s = last;
-  if (!s) return <PanelSection><PanelSectionRow><Field label="Asking the PC…" /></PanelSectionRow></PanelSection>;
+  if (!s) return <PanelSection><PanelSectionRow><Field label={here ? "Asking the Manager on this Deck…" : "Asking the PC…"} /></PanelSectionRow></PanelSection>;
   if (!s.installed) {
     return (
       <PanelSection>
         <PanelSectionRow>
           <Field label="Not set up on this Deck"
-            description="Install the Manager on the Deck from the PC app: Settings → Deck mode → Install the Manager on the Deck." />
+            description="Install the Manager on the Deck from the PC app: Settings → Deck mode → Install the Manager on the Deck. Or install the Sem PC mode on this Deck to use it without a PC." />
         </PanelSectionRow>
       </PanelSection>
     );
@@ -623,7 +646,7 @@ function Panel() {
         {count > MOST && <PanelSectionRow><Field description={`And ${count - MOST} more: see them in the Manager.`} /></PanelSectionRow>}
         {!count && (
           <PanelSectionRow>
-            <Field description="Nothing in progress. Choose a game in the Manager's Catalogue and press Install: the PC does the work." />
+            <Field description={`Nothing in progress. Choose a game in the Manager's Catalogue and press Install: ${d.mode === "local" ? "this Deck" : "the PC"} does the work.`} />
           </PanelSectionRow>
         )}
       </PanelSection>

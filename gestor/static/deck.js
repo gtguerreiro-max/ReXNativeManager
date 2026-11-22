@@ -14,6 +14,14 @@ const S = {
   f: { q: '', kind: 'all', sort: 'name', genre: '' }, shown: 60,
   layers: [], cur: null, lastFocus: {}, seen: {}, sig: {},
 };
+// Quem faz o trabalho: a app do PC ('pc') ou este Deck (o modo Sem PC, 'local'), como diz home.mode.
+// Até o /home responder, a morada (o serviço do Deck está em 127.0.0.1:8370).
+const LOCAL = 'http://127.0.0.1:8370';
+S.mode = location.port === '8370' && ['127.0.0.1', 'localhost'].includes(location.hostname) ? 'local' : 'pc';
+const isLocal = () => S.mode === 'local';
+// Where the work is done, in the texts: "Build on the PC" / "Build on this Deck".
+const side = () => isLocal() ? 'this Deck' : 'the PC';
+const Side = () => isLocal() ? 'This Deck' : 'The PC';
 
 // -- API ------------------------------------------------------------------------------------------
 async function api(path, opts = {}) {
@@ -27,9 +35,12 @@ async function api(path, opts = {}) {
   o.signal = ctl.signal;
   let r;
   try { r = await fetch(path, o); }
-  catch (e) { throw new Error(e.name === 'AbortError' ? 'The PC did not answer' : 'No connection to the PC'); }
+  catch (e) {
+    if (isLocal()) throw new Error(e.name === 'AbortError' ? 'The Manager on this Deck did not answer' : 'No connection to the Manager on this Deck');
+    throw new Error(e.name === 'AbortError' ? 'The PC did not answer' : 'No connection to the PC');
+  }
   finally { clearTimeout(timer); }
-  if (r.status === 401) { if (S.tab !== 'pair') showPair(); throw new Error('emparelhar'); }
+  if (r.status === 401 && !isLocal()) { if (S.tab !== 'pair') showPair(); throw new Error('emparelhar'); }
   if (r.status === 428) throw new Error('Sign in with GitHub on the PC first (the ReXNative Manager page)');
   const t = await r.text();
   let d;
@@ -219,7 +230,9 @@ function backdropNow(url) {
 }
 
 // -- separadores ------------------------------------------------------------------------------
-const TABS = ['deck', 'pc', 'catalog', 'log', 'orders'];
+const TABS = ['deck', 'pc', 'catalog', 'log', 'orders', 'settings'];
+// The tabs on the bar (L1/R1 go through these): without the PC there is no "On PC".
+const tabs = () => isLocal() ? TABS.filter(t => t !== 'pc') : TABS;
 const TAB_KEY = 'gestor-tab';
 function switchTab(t) {
   if (S.layers.length || S.tab === 'pair') return;
@@ -235,8 +248,16 @@ function switchTab(t) {
 function firstTab() {
   let t = null;
   try { t = localStorage.getItem(TAB_KEY); } catch (e) { /* */ }
-  if (TABS.includes(t)) return t;
+  if (tabs().includes(t)) return t;
   return (S.home && (S.home.games || []).length) ? 'deck' : 'catalog';
+}
+// The mode changed (home.mode, or the address at the start): the tab bar and the texts follow.
+function applyMode() {
+  const pcTab = $('#tabs .tab[data-tab="pc"]');
+  if (pcTab) pcTab.classList.toggle('hide', isLocal());
+  if (isLocal()) { const p = $('#v-boot p'); if (p) p.textContent = 'Opening the Manager on this Deck…'; }
+  S.sig = {};
+  if (isLocal() && S.tab === 'pc' && !S.layers.length) switchTab('deck');
 }
 
 // -- saltar nas grelhas (L2 / R2) ---------------------------------------------------------------
@@ -325,7 +346,7 @@ function nowStrip() {
   // One line: while the assistant fixes a step, that, not the command it is running.
   // (pstep in a request that follows a pipeline; step in a rebuild asked from the Deck, which is one)
   const fixing = p.pstep === 'claude' || (o.kind === 'pipeline' && p.step === 'claude');
-  const text = fixing && !waits ? 'Claude is fixing a step that failed on the PC' : stageText(o);
+  const text = fixing && !waits ? 'Claude is fixing a step that failed on ' + side() : stageText(o);
   el.innerHTML = `<span class="pulse ${waits ? 'q' : ''}"></span><span class="t">${esc(otitle(o))}</span><span class="s">${esc(text)}</span>
     ${pc != null && o.status === 'running' && !waits ? `<span class="pb"><span style="width:${Math.max(0, Math.min(100, pc)).toFixed(1)}%"></span></span>` : ''}
     ${act.length > 1 ? `<span class="more">+${act.length - 1} more</span>` : ''}`;
@@ -336,7 +357,7 @@ function pcWorkText(h) {
   const w = (h || {}).pc_work;
   if (!w) return '';
   const run = (w.running || []).map(r => `${r.title}${r.for_s != null ? ' (' + eta(r.for_s) + ')' : ''}`);
-  const parts = [run.length ? 'The PC is working on ' + run.join(' and ') : 'The PC is free'];
+  const parts = [run.length ? Side() + ' is working on ' + run.join(' and ') : Side() + ' is free'];
   if (w.queued) parts.push(`${w.queued} job${w.queued > 1 ? 's' : ''} waiting`);
   if (w.restart) parts.push('it restarts after the running jobs, the queue continues afterwards');
   return parts.join(' · ');
@@ -346,7 +367,7 @@ function pcWork(h) {
   const busy = (((h || {}).pc_work || {}).running || []).length;
   return t ? `<div class="pcw" id="pcw"><span class="dot ${busy ? 'ok' : ''}"></span><span>${esc(t)}</span></div>` : '';
 }
-function nextTab(d) { switchTab(TABS[(TABS.indexOf(S.tab) + d + TABS.length) % TABS.length]); }
+function nextTab(d) { const ts = tabs(); switchTab(ts[(ts.indexOf(S.tab) + d + ts.length) % ts.length]); }
 
 function render(t) {
   if (t === 'deck') renderDeck();
@@ -354,6 +375,7 @@ function render(t) {
   else if (t === 'catalog') renderCatalog();
   else if (t === 'orders') renderOrders();
   else if (t === 'log') { renderLog(); loadLog(); }
+  else if (t === 'settings') { renderSettings(); loadMode(); }
   logBadge();
 }
 
@@ -367,8 +389,11 @@ async function refreshHome(readDeck, manual) {
   try {
     const h = await api('/api/remote/home' + (readDeck ? '?refresh=true' : ''), { timeout: readDeck ? 60000 : 10000 });
     S.online = true;
+    if (!h.deck) h.deck = {};
     const prev = S.home;
     S.home = h;
+    const mode = h.mode === 'local' ? 'local' : 'pc';
+    if (mode !== S.mode) { S.mode = mode; applyMode(); }
     notifyOrders(prev, h);
     notifyAchievements(h);
     notifySnapshots(h);
@@ -378,7 +403,7 @@ async function refreshHome(readDeck, manual) {
     $('#ordn').classList.toggle('hide', !n);
     // Volta a desenhar o separador à vista só se mudou alguma coisa (o foco fica onde estava).
     const sig = S.tab === 'orders' ? ordersShape(h) : S.tab === 'deck' ? deckSig(h) : null;
-    if (sig !== S.sig[S.tab] && !S.layers.length && S.tab !== 'catalog' && S.tab !== 'log') {
+    if (sig !== S.sig[S.tab] && !S.layers.length && S.tab !== 'catalog' && S.tab !== 'log' && S.tab !== 'settings') {
       const id = S.cur && S.cur.dataset.id;
       const view = $('#v-' + S.tab), top = view.scrollTop;
       render(S.tab);
@@ -421,8 +446,10 @@ function notifyOrders(prev, h) {
 function status() {
   const h = S.home || {};
   const sp = ((h.deck || {}).space || {}).interno;
-  $('#status').innerHTML = `<span class="pcn"><span class="dot ${S.online ? 'ok' : 'bad'}"></span>${S.online ? 'PC ' + esc(h.pc || '') : 'No connection to the PC'}</span>
-    ${S.online && h.ssh === false ? '<span class="chip" title="The PC cannot reach the Deck (SSH): sending waits">Deck unreachable: sending waits</span>' : ''}
+  const who = isLocal() ? (S.online ? 'This Deck does the work' : 'No connection to the Manager on this Deck')
+    : S.online ? 'PC ' + esc(h.pc || '') : 'No connection to the PC';
+  $('#status').innerHTML = `<span class="pcn"><span class="dot ${S.online ? 'ok' : 'bad'}"></span>${who}</span>
+    ${S.online && h.ssh === false && !isLocal() ? '<span class="chip" title="The PC cannot reach the Deck (SSH): sending waits">Deck unreachable: sending waits</span>' : ''}
     ${sp ? `<span>· ${gb(sp.free)} free</span>` : ''}${h.version ? `<span>· v${esc(h.version)}</span>` : ''}`;
   nowStrip();
 }
@@ -447,13 +474,15 @@ function openWhatsNew(since) {
   const vk = x => String(x || '0').split('.').map(n => parseInt(n, 10) || 0).reduce((a, n) => a * 1000 + n, 0);
   const list = (v.changes || []).filter(c => !since || vk(c[0]) > vk(since)).slice(0, 4);
   const shown = list.length ? list : (v.changes || []).slice(0, 1);
+  // The launcher and the plugin come from the PC (over SSH): nothing to offer without it.
+  const kit = !isLocal() && v.kit && v.kit.outdated, plug = isLocal() ? null : v.plugin;
   openLayer(`<div class="sheet confirm" style="width:980px"><h3>What's new in the Manager v${esc(v.running)}</h3>
     <div style="max-height:470px;overflow:auto">${shown.map(([ver, date, items]) => `<div class="hist f" tabindex="-1"><b>v${esc(ver)} · ${esc(date)}</b>
       ${items.map(i => `<div class="chg">• ${esc(i)}</div>`).join('')}</div>`).join('')}</div>
-    ${v.kit && v.kit.outdated ? `<div class="note">A newer launcher for this Deck is ready (v${esc(v.kit.latest)}; this one is v${esc(v.kit.on_deck)}).</div>` : ''}
-    ${v.plugin && v.plugin.outdated ? `<div class="note">The Decky plugin here is v${esc(v.plugin.on_deck)}: v${esc(v.plugin.latest)} is on the PC.</div>` : ''}
-    <div class="acts">${v.kit && v.kit.outdated ? '<button class="btn p f" onclick="updateKit()">Update the launcher</button>' : ''}
-      ${v.plugin && (v.plugin.outdated || !v.plugin.on_deck) ? `<button class="btn ${v.kit && v.kit.outdated ? '' : 'p '}f" onclick="updatePlugin()">${v.plugin.on_deck ? 'Update' : 'Install'} the Decky plugin</button>` : ''}
+    ${kit ? `<div class="note">A newer launcher for this Deck is ready (v${esc(v.kit.latest)}; this one is v${esc(v.kit.on_deck)}).</div>` : ''}
+    ${plug && plug.outdated ? `<div class="note">The Decky plugin here is v${esc(plug.on_deck)}: v${esc(plug.latest)} is on the PC.</div>` : ''}
+    <div class="acts">${kit ? '<button class="btn p f" onclick="updateKit()">Update the launcher</button>' : ''}
+      ${plug && (plug.outdated || !plug.on_deck) ? `<button class="btn ${kit ? '' : 'p '}f" onclick="updatePlugin()">${plug.on_deck ? 'Update' : 'Install'} the Decky plugin</button>` : ''}
       <button class="btn f" onclick="closeLayer()">Close</button></div></div>`, { focus: '.btn' });
 }
 async function updatePlugin() {
@@ -618,6 +647,7 @@ function logPickGame(gi) {
 }
 async function logOpenGame(slug) {
   if (deckGame(slug)) { openDeckGame(slug); return; }
+  if (isLocal()) { toast('That game is not on this Deck', true); return; }
   if (!pcGame(slug)) await loadPc();
   if (pcGame(slug)) openPcGame(slug);
   else toast('That game is not on the PC list yet', true);
@@ -704,7 +734,7 @@ function renderDeck() {
       <div class="cv">${img(g.title, g.slug)}<div class="badges">${b.join('')}</div>${g.job ? '<div class="busy"><div class="spin"></div></div>' : ''}</div>
       <div class="nm">${esc(g.title)}</div></button>`;
   }).join('');
-  const upd = batchGames('update'), reb = batchGames('rebuild');
+  const upd = isLocal() ? [] : batchGames('update'), reb = isLocal() ? [] : batchGames('rebuild');  // the PC's
   const dv = S.dv || {};
   const low = sp && (sp.free < 20e9 || sp.free < sp.total * 0.1);
   const all = `<div class="tools" style="margin:0 0 14px">
@@ -713,12 +743,12 @@ function renderDeck() {
       <button class="pill f ${low ? 'on' : ''}" data-hint="Free space" onclick="openFreeSpace()">🗑 Free space</button>
       ${upd.length ? `<button class="pill f" data-hint="Update all" onclick="confirmBatch('update')">⟳ Update all (${upd.length})</button>` : ''}
       ${reb.length ? `<button class="pill f" data-hint="Rebuild all" onclick="confirmBatch('rebuild')">⚒ Rebuild all (${reb.length})</button>` : ''}</div>`;
-  v.innerHTML = `<div class="vhead"><div><h2>On your Deck</h2><div class="sub">${dv.q ? gs.length + ' of ' : ''}${all0.length} ReXNative game(s)${h.deck.reachable ? '' : ' · the Deck did not respond: showing the last scan'}</div></div>
+  v.innerHTML = `<div class="vhead"><div><h2>On your Deck</h2><div class="sub">${dv.q ? gs.length + ' of ' : ''}${all0.length} ReXNative game(s)${h.deck.reachable !== false ? '' : ' · the Deck did not respond: showing the last scan'}</div></div>
       <div class="grow"></div>${storage(sp)}</div>
     ${all}
     ${low ? `<div class="banner">The Deck is running out of space (${gb(sp.free)} free): Free space shows the biggest games and the ones you have not played for a while.</div>` : ''}
     ${pendingBanner(h)}
-    ${S.ver && S.ver.kit && S.ver.kit.outdated ? `<div class="banner">A newer launcher for this Deck is ready (v${esc(S.ver.kit.latest)}). <button class="btn f" style="margin-left:10px" onclick="updateKit()">Update</button></div>` : ''}
+    ${!isLocal() && S.ver && S.ver.kit && S.ver.kit.outdated ? `<div class="banner">A newer launcher for this Deck is ready (v${esc(S.ver.kit.latest)}). <button class="btn f" style="margin-left:10px" onclick="updateKit()">Update</button></div>` : ''}
     ${gs.length ? `<div class="grid">${tiles}</div>` : `<div class="empty"><b>No games on the Deck yet</b>Go to the Catalogue (R1), choose a game and press Install.</div>`}`;
 }
 // Procura e ordem nas listas "On Deck" (S.dv) e "On PC" (S.pv).
@@ -758,7 +788,8 @@ function openFreeSpace() {
   const sp = ((h.deck || {}).space || {}).interno || {};
   const gs = (h.games || []).filter(g => !g.job).slice().sort((a, b) => (b.size || 0) - (a.size || 0));
   const l = openLayer(`<div class="sheet confirm" style="width:900px"><h3>Free space on the Deck</h3>
-    <p>${gb(sp.free)} free of ${gb(sp.total)}. Choose the games to delete: the saves and settings are copied to the PC first, and the games stay on the PC to install again.</p>
+    <p>${gb(sp.free)} free of ${gb(sp.total)}. Choose the games to delete: ${isLocal() ? 'the saves and settings are backed up first, and you can install the games again from the Catalogue'
+      : 'the saves and settings are copied to the PC first, and the games stay on the PC to install again'}.</p>
     <div class="opts" style="max-height:430px;overflow:auto">${gs.map(g => `<button class="check f" data-slug="${esc(g.slug)}" data-size="${g.size || 0}" data-hint="Choose" onclick="this.classList.toggle('on');freeTotal()">
       <span class="box">✓</span><span style="flex:1">${esc(g.title)}</span><span style="color:var(--muted);margin-left:12px">${gb(g.size)} · ${g.last_played ? 'played ' + ago(g.last_played) : 'never played'}</span></button>`).join('')}</div>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
@@ -779,7 +810,8 @@ function confirmFree() {
   const names = slugs.map(sl => (deckGame(sl) || { title: sl }).title);
   const total = sel.reduce((a, b) => a + (parseInt(b.dataset.size, 10) || 0), 0);
   openLayer(`<div class="sheet confirm"><h3>Delete ${slugs.length} game(s) from the Deck?</h3>
-    <p>${names.map(esc).join(', ')}. Frees ${gb(total)}. The saves and settings are copied to the PC first; this cannot be undone on the Deck (install again from On PC).</p>
+    <p>${names.map(esc).join(', ')}. Frees ${gb(total)}. ${isLocal() ? 'The saves and settings are backed up first; this cannot be undone (install again from the Catalogue).'
+      : 'The saves and settings are copied to the PC first; this cannot be undone on the Deck (install again from On PC).'}</p>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
       <button class="btn d f" data-hint="Delete" onclick='doFree(${JSON.stringify(slugs).replace(/'/g, "&#39;")})'>Delete</button></div></div>`, { focus: '.btn' });
 }
@@ -814,7 +846,7 @@ async function doBatch(mode) {
   try {
     const j = await api('/api/remote/' + (mode === 'rebuild' ? 'rebuild-all' : 'update-all'), { body: {} });
     S.seen[j.id] = j.status;
-    toast(`${mode === 'rebuild' ? 'Rebuilding' : 'Updating'} on the PC: follow it in Requests (R1)`);
+    toast(`${mode === 'rebuild' ? 'Rebuilding' : 'Updating'} on ${side()}: follow it in Requests (R1)`);
     closeAll();
     setTimeout(() => refreshHome(), 1500);
   } catch (e) { toast(e.message, true); }
@@ -824,13 +856,13 @@ function openDeckGame(slug) {
   const g = deckGame(slug);
   if (!g) return;
   const notes = [];
-  if (g.update) notes.push('A newer build is ready on the PC.');
+  if (g.update) notes.push(`A newer build is ready on ${side()}.`);
   if (g.pending_add) notes.push('Joins the library when you exit the Manager.');
   else if (!g.in_library) notes.push('Has no shortcut in the Steam library.');
   if (!g.complete) notes.push('The transfer did not finish: update to send the rest.');
   const fr = g.fresh;
   const stale = fr && fr.state === 'desatualizado';
-  if (stale) notes.push(`Built before ${[fr.missing_count ? fr.missing_count + ' ReXNative fix(es)' : '', fr.sdk_changed ? 'the new SDK' : ''].filter(Boolean).join(' and ')}: rebuild to get them (5 to 7 min on the PC).`);
+  if (stale) notes.push(`Built before ${[fr.missing_count ? fr.missing_count + ' ReXNative fix(es)' : '', fr.sdk_changed ? 'the new SDK' : ''].filter(Boolean).join(' and ')}: rebuild to get them (${isLocal() ? 'it takes a while on the Deck' : '5 to 7 min on the PC'}).`);
   openLayer(`<div class="sheet detail">
     <div class="big">${img(g.title, g.slug)}</div>
     <div class="grow">
@@ -856,7 +888,7 @@ function openDeckGame(slug) {
         <button class="btn d f" onclick="confirmDelete('${esc(g.slug)}')">Delete from Deck</button>
         <button class="btn f" onclick="closeLayer()">Close</button>
       </div>
-      ${g.on_pc ? '' : '<div class="note">This game is not in the PC folders: it can only be deleted.</div>'}
+      ${g.on_pc ? '' : `<div class="note">This game is not in the ${isLocal() ? "Manager's folders on this Deck" : 'PC folders'}: it can only be deleted.</div>`}
       <div id="gcard"><div class="note">Reading the versions…</div></div>
     </div></div>`);
   if (g.on_pc) loadGameCard(slug);
@@ -902,7 +934,7 @@ function renderGameCard(slug, d) {
   if (meta) h.push(`<div class="meta" style="margin:14px 0 0">${esc(meta)}</div>`);
   h.push(`<div class="sec"><h4>On the Deck</h4><div class="vline f" tabindex="-1">${esc(verLine(d.deck_version))}</div><div class="vline dim">${esc(sets)}</div></div>`);
   if (d.pc_newer) {
-    h.push(`<div class="sec"><h4>Ready on the PC <span class="bd g">Update</span></h4><div class="vline f" tabindex="-1">${esc(verLine(d.pc_version))}</div>
+    h.push(`<div class="sec"><h4>Ready on ${side()} <span class="bd g">Update</span></h4><div class="vline f" tabindex="-1">${esc(verLine(d.pc_version))}</div>
       ${d.pc_brings.length ? '<div class="sub2">What it brings:</div>' + chgList(d.pc_brings) : '<div class="vline dim">No ReXNative fixes in between (the SDK or the game itself changed).</div>'}</div>`);
   }
   if (d.missing.length || d.sdk_changed) {
@@ -1000,10 +1032,10 @@ async function openRestore(slug) {
   let bs = [];
   try { bs = (await api('/api/remote/backups/' + encodeURIComponent(slug))).backups; } catch (e) { toast(e.message, true); return; }
   openLayer(`<div class="sheet confirm" style="width:820px"><h3>Restore saves: ${esc(g.title)}</h3>
-    ${bs.length ? `<p>The copies on the PC (made when the game was deleted from the Deck). Restoring puts that copy's saves and settings back on the Deck, over the current ones.</p>
+    ${bs.length ? `<p>The copies on ${side()} (made when the game was deleted from the Deck). Restoring puts that copy's saves and settings back on the Deck, over the current ones.</p>
       <div class="opts">${bs.map(b => `<button class="hist f" data-hint="Restore" onclick="confirmRestore('${esc(slug)}', '${esc(b.file)}', '${esc(when2(b.at))}')"><b>${esc(when2(b.at))}</b>
         <div class="chg">${b.saves} save file(s) · ${gb(b.size)}</div></button>`).join('')}</div>`
-      : '<p>No copies of this game\'s saves on the PC yet: they are made when you delete the game from the Deck with "Back up the saves" on.</p>'}
+      : `<p>No copies of this game's saves on ${side()} yet: they are made when you delete the game from the Deck with "Back up the saves" on.</p>`}
     <div class="acts"><button class="btn f" onclick="closeLayer()">Close</button></div></div>`);
 }
 function confirmRestore(slug, file, at) {
@@ -1034,7 +1066,7 @@ async function playGame(slug) {
 async function rebuildGame(slug) {
   try {
     await api('/api/remote/rebuild/' + encodeURIComponent(slug), { body: {} });
-    toast('Rebuilding on the PC: it then goes to the Deck on its own');
+    toast(isLocal() ? 'Rebuilding on this Deck: it is installed again on its own' : 'Rebuilding on the PC: it then goes to the Deck on its own');
     closeAll();
     setTimeout(() => refreshHome(), 1500);
   } catch (e) { toast(e.message, true); }
@@ -1100,8 +1132,8 @@ function confirmDelete(slug) {
   if (!g) return;
   const l = openLayer(`<div class="sheet confirm"><h3>Delete ${esc(g.title)} from the Deck?</h3>
     <p>Frees ${gb(g.size)}. ${g.saves ? `It has <b style="color:var(--warn)">${g.saves} save(s)</b>, kept in the game folder.` : 'No saves found.'}
-      This cannot be undone (the game stays on the PC so you can install it again).</p>
-    <button class="check f on" id="bk" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Back up the saves and settings to the PC first</button>
+      ${isLocal() ? 'This cannot be undone (install it again from the Catalogue).' : 'This cannot be undone (the game stays on the PC so you can install it again).'}</p>
+    <button class="check f on" id="bk" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>${isLocal() ? 'Back up the saves and settings first' : 'Back up the saves and settings to the PC first'}</button>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
       <button class="btn d f" data-hint="Delete" onclick="doDelete('${esc(slug)}')">Delete</button></div></div>`, { focus: '.btn' });
   return l;
@@ -1280,7 +1312,7 @@ function catTile(g) {
   const b = [];
   if (g.on_deck) b.push('<span class="bd g">On Deck</span>');
   else if (g.order) b.push('<span class="bd i">Requested</span>');
-  else if (g.built) b.push('<span class="bd">On PC</span>');
+  else if (g.built) b.push(`<span class="bd">${isLocal() ? 'Built' : 'On PC'}</span>`);
   else if (g.own) b.push('<span class="bd i">Your file</span>');
   const mc = g.mc ? `<div class="mc ${g.mc >= 75 ? 'h' : g.mc >= 50 ? 'm' : 'l'}">${g.mc}</div>` : '';
   const slug = g.art ? g.local : null;
@@ -1335,7 +1367,8 @@ function openCatGame(key) {
   const g = catGame(key);
   if (!g) return;
   const order = g.order && ((S.home || {}).orders || []).find(o => o.id === g.order);
-  const state = g.on_deck ? 'Already on your Deck.' : order ? `Request in progress: ${stageText(order)}` : g.built ? 'Already built on the PC: it goes straight to the Deck.' : '';
+  const state = g.on_deck ? 'Already on your Deck.' : order ? `Request in progress: ${stageText(order)}`
+    : g.built ? (isLocal() ? 'Already built on this Deck: it installs straight away.' : 'Already built on the PC: it goes straight to the Deck.') : '';
   const slug = g.art ? g.local : null;
   openLayer(`<div class="sheet detail">
     <div class="big">${img(g.title, slug, g.xbla)}</div>
@@ -1343,7 +1376,7 @@ function openCatGame(key) {
       <h3>${esc(g.title)}</h3>
       <div class="meta">${(g.genres || []).length ? `<span>${esc(g.genres.join(', '))}</span>` : ''}${g.year ? `<span>${g.year}</span>` : ''}
         ${g.mc ? `<span>Metacritic <b>${g.mc}</b></span>` : ''}<span>${g.xbla ? 'Arcade (XBLA)' : 'Disc'}</span></div>
-      <div class="facts"><span>${g.own ? 'Size' : 'Download'}</span><b>${gb(g.size)}</b><span>Source</span><b>${esc(g.own ? 'Your files (' + g.own + ')' : g.source)}</b><span>${g.own ? 'On the PC' : 'File'}</span><b style="font-weight:500;font-size:14px;overflow-wrap:anywhere">${esc(g.name)}</b></div>
+      <div class="facts"><span>${g.own ? 'Size' : 'Download'}</span><b>${gb(g.size)}</b><span>Source</span><b>${esc(g.own ? 'Your files (' + g.own + ')' : g.source)}</b><span>${g.own ? 'On ' + side() : 'File'}</span><b style="font-weight:500;font-size:14px;overflow-wrap:anywhere">${esc(g.name)}</b></div>
       ${state ? `<div class="note" style="color:var(--text)">${esc(state)}</div>` : ''}
       <div class="acts">
         ${order ? `<button class="btn p f" onclick="closeLayer();switchTab('orders')">View the request</button>`
@@ -1358,16 +1391,16 @@ function confirmOrder(key) {
   const free = (((h.deck || {}).space || {}).interno || {}).free;
   const tight = free != null && free < g.size * 1.3 + 1e9;
   const steps = [];
-  if (!g.built && !g.own) steps.push(`Download to the PC (${gb(g.size)})`);
-  if (!g.built) steps.push(`Prepare, build and test on the PC${g.own ? ' from your file' : ''} (10 to 40 minutes; if it fails, the assistant tries to fix it)`);
-  steps.push('Send to the Deck and add to the library (when you exit the Manager)');
+  if (!g.built && !g.own) steps.push(`Download to ${side()} (${gb(g.size)})`);
+  if (!g.built) steps.push(`Prepare, build and test on ${side()}${g.own ? ' from your file' : ''} (${isLocal() ? 'it takes a while: the Deck is slower than a PC' : '10 to 40 minutes'}; if it fails, the assistant tries to fix it)`);
+  steps.push(isLocal() ? 'Install and add to the library (when you exit the Manager)' : 'Send to the Deck and add to the library (when you exit the Manager)');
   const sdFree = ((((h.deck || {}).space || {}).sd) || {}).free;
   const where = sdFree != null ? `<button class="opt f" id="owhere" data-i="0" data-hint="Change" onclick="cycle(this, 1)">
       <span class="l">Install to</span><span class="arr">◀</span><span class="v">Internal storage (${gb(free)} free)</span><span class="arr">▶</span></button>` : '';
   openLayer(`<div class="sheet confirm"><h3>Install ${esc(g.title)}?</h3>
     <ol style="color:var(--muted);margin:0 0 14px;padding-left:22px">${steps.map(s => `<li style="margin-bottom:6px">${esc(s)}</li>`).join('')}</ol>
     ${where}
-    <p>Free on the Deck: <b style="color:${tight ? 'var(--warn)' : 'var(--text)'}">${gb(free)}</b>${sdFree != null ? ` · microSD card: <b style="color:var(--text)">${gb(sdFree)}</b>` : ''}${h.pc_free_gb != null ? ` · on the PC: <b style="color:var(--text)">${h.pc_free_gb.toFixed(0)} GB</b>` : ''}${tight ? ' (may not be enough: delete a game from the Deck first, or install to the microSD card)' : ''}</p>
+    <p>Free on the Deck: <b style="color:${tight ? 'var(--warn)' : 'var(--text)'}">${gb(free)}</b>${sdFree != null ? ` · microSD card: <b style="color:var(--text)">${gb(sdFree)}</b>` : ''}${!isLocal() && h.pc_free_gb != null ? ` · on the PC: <b style="color:var(--text)">${h.pc_free_gb.toFixed(0)} GB</b>` : ''}${tight ? ' (may not be enough: delete a game from the Deck first, or install to the microSD card)' : ''}</p>
     <p>You can keep using the Deck: follow it in Requests.</p>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
       <button class="btn p f" data-hint="Install" onclick="doOrder(${JSON.stringify(g.key).replace(/"/g, '&quot;')})">Install</button></div></div>`, { focus: '.btn.p' });
@@ -1405,12 +1438,12 @@ function openReport(slug) {
   const g = deckGame(slug) || { title: slug };
   const st = { text: '', secs: 1 };
   const l = openLayer(`<div class="sheet confirm" style="width:980px"><h3>Report a problem: ${esc(g.title)}</h3>
-    <p>What do you see on the Deck? (choose one or more) Claude investigates on the PC with what the Deck knows about the game: the log, the settings and the Steam screenshots (Steam + R1).</p>
+    <p>What do you see on the Deck? (choose one or more) Claude investigates on ${side()} with what the Deck knows about the game: the log, the settings and the Steam screenshots (Steam + R1).</p>
     <div class="tools" style="margin:0 0 12px">${RCHIPS.map(([k, t]) => `<button class="pill f" data-chip="${k}" data-hint="Choose" onclick="this.classList.toggle('on')">${esc(t)}</button>`).join('')}</div>
     <button class="check f" id="rtext" data-hint="Type" onclick="reportText()"><span class="box">✎</span><span id="rtextv">Write more (on-screen keyboard)</span></button>
     <div style="height:10px"></div>
-    ${g.snapshots ? `<button class="check f on" id="rsnap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Send the snapshot${g.snapshots > 1 ? 's' : ''} you took in the game (${g.snapshots}, newest ${ago(g.snapshot_at)}): Claude sees that moment and replays its frames on the PC</button>
-    <div style="height:10px"></div>` : '<p class="note" style="margin:0 0 10px">Tip: at the place, in the game, press View + Menu and then Y. That moment is saved as a snapshot, and the next report sends it: Claude sees what you saw and replays those frames on the PC.</p>'}
+    ${g.snapshots ? `<button class="check f on" id="rsnap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Send the snapshot${g.snapshots > 1 ? 's' : ''} you took in the game (${g.snapshots}, newest ${ago(g.snapshot_at)}): Claude sees that moment and replays its frames on ${side()}</button>
+    <div style="height:10px"></div>` : `<p class="note" style="margin:0 0 10px">Tip: at the place, in the game, press View + Menu and then Y. That moment is saved as a snapshot, and the next report sends it: Claude sees what you saw and replays those frames on ${side()}.</p>`}
     <button class="check f${g.snapshots ? '' : ' on'}" id="rcap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Take a screenshot on the Deck: the game opens, is captured and closes on its own</button>
     <div style="height:10px"></div>
     <button class="opt f" id="rsecs" data-hint="Change" onclick="reportSecs(1)"><span class="l">Screenshot at</span><span class="arr">◀</span><span class="v">${RSECS[st.secs]} s</span><span class="arr">▶</span></button>
@@ -1476,13 +1509,13 @@ function openKeyboard(initial, opts = {}) {
 function openTextInput(initial, done) { return openKeyboard(initial, { done }); }
 
 // -- Pedidos ----------------------------------------------------------------------------------
-const OSTEPS = [['download', 'Download'], ['build', 'Build on the PC'], ['deck', 'Send to the Deck'], ['library', 'Library']];
+const OSTEPS = () => [['download', 'Download'], ['build', 'Build on ' + side()], ['deck', isLocal() ? 'Install' : 'Send to the Deck'], ['library', 'Library']];
 const RSTEPS = [['deck', 'Collect on the Deck'], ['claude', 'Claude investigates'], ['deck_send', 'Send the fix']];
 // O que se pediu do Deck além de instalar e reportar (recompilar, atualizar, definições, apagar).
 const KIND_LABEL = { gameplay: 'Gameplay scene', 'deck-report': 'Report', pipeline: 'Rebuild', deck: 'Send', 'deck-delete': 'Delete', 'deck-flush': 'Library', report: 'Report', 'deck-gestor': 'Launcher', 'deck-restore': 'Restore', 'deck-plugin': 'Plugin', 'deck-batch': 'All', 'linux-build': 'Linux build', 'linux-deck': 'Linux to Deck', 'linux-runner': 'Linux / Windows' };
 // O título sem o "Report:" que a tarefa já traz (a etiqueta diz o que é).
 const otitle = o => String(o.title || '').replace(/^(Report|Relatório|Reenviar para o Deck|Instalar para o Deck|Resend to the Deck|Install to the Deck|Delete from the Deck): /, '');
-const stepsOf = o => o.kind === 'deck-report' ? RSTEPS : o.kind === 'order' ? OSTEPS : [];
+const stepsOf = o => o.kind === 'deck-report' ? RSTEPS : o.kind === 'order' ? OSTEPS() : [];
 function stageIndex(o) {
   const st = stepsOf(o);
   if (o.status === 'ok') return o.kind === 'deck-report' ? st.length : o.stage === 'library' ? 3 : 4;
@@ -1492,11 +1525,12 @@ function stageIndex(o) {
 // What a queued job waits for: the job running before it on the PC (one build or Claude at a time).
 function waitText(w) {
   if (!w) return '';
-  if (w.restart) return 'Continues when the Manager on the PC has restarted';
+  if (w.restart) return `Continues when the Manager on ${side()} has restarted`;
   const n = w.ahead ? `${w.ahead} more request${w.ahead > 1 ? 's' : ''} before this one` : '';
-  if (!w.title) return 'Waiting: ' + (n || 'the PC is busy');
-  return `Waiting for the PC to finish ${w.title}${w.for_s != null ? ' (running for ' + eta(w.for_s) + ')' : ''}${n ? ', then ' + n : ''}`;
+  if (!w.title) return 'Waiting: ' + (n || side() + ' is busy');
+  return `Waiting for ${side()} to finish ${w.title}${w.for_s != null ? ' (running for ' + eta(w.for_s) + ')' : ''}${n ? ', then ' + n : ''}`;
 }
+const interrupted = () => isLocal() ? 'interrupted (the Manager on this Deck stopped)' : 'interrupted (the PC app closed)';
 function stageText(o) {
   const p = o.progress || {};
   if (p.waiting && o.status === 'running') return waitText(p.waiting);
@@ -1512,7 +1546,7 @@ function stageText(o) {
     if (o.status === 'ok') return o.last || 'done';
     if (o.status === 'failed') return o.error || 'failed';
     if (o.status === 'cancelled') return 'cancelled';
-    if (o.status === 'interrupted') return 'interrupted (the PC app closed)';
+    if (o.status === 'interrupted') return interrupted();
     if (p.total) return `${gb(p.done)} of ${gb(p.total)}${p.rate ? ' · ' + (p.rate / 1e6).toFixed(1) + ' MB/s' : ''}${p.eta != null && p.done < p.total ? ' · ' + eta(p.eta) + ' left' : ''}`;
     if (p.phase) return [p.step_pt, p.phase].filter(Boolean).join(': ') + (p.pct != null ? ` · ${Math.round(p.pct)}%` : '');
     return o.last || 'running';
@@ -1522,7 +1556,7 @@ function stageText(o) {
     if (o.status === 'ok') return (r.status || 'investigated') + (r.summary ? ': ' + r.summary.replace(/\s+/g, ' ').slice(0, 200) : '');
     if (o.status === 'failed') return o.error || 'failed';
     if (o.status === 'queued') return 'queued';
-    if (o.stage === 'claude') return 'Claude is investigating on the PC' + (p.phase ? ': ' + p.phase : '');
+    if (o.stage === 'claude') return 'Claude is investigating on ' + side() + (p.phase ? ': ' + p.phase : '');
     if (o.stage === 'deck_send') return 'Sending the fixed version to the Deck' + (p.total ? ` · ${gb(p.done)} of ${gb(p.total)}` : '');
     return o.last || 'Collecting the log and settings on the Deck';
   }
@@ -1530,13 +1564,13 @@ function stageText(o) {
   if (o.status === 'ok') return o.stage === 'library' ? 'on the Deck: joins the library when you exit the Manager' : "in the Deck's library";
   if (o.status === 'failed') return o.error || 'failed';
   if (o.status === 'cancelled') return 'cancelled';
-  if (o.status === 'interrupted') return 'interrupted (the PC app closed)';
+  if (o.status === 'interrupted') return interrupted();
   if (p.total) return `${gb(p.done)} of ${gb(p.total)}${p.rate ? ' · ' + (p.rate / 1e6).toFixed(1) + ' MB/s' : ''}${p.eta != null && p.done < p.total ? ' · ' + eta(p.eta) + ' left' : ''}`;
   if (p.phase) return [p.step_pt, p.phase].filter(Boolean).join(': ') + (p.pct != null ? ` · ${Math.round(p.pct)}%` : '') + (p.rate && !p.total ? ' · ' + (p.rate / 1e6).toFixed(1) + ' MB/s' : '');
-  return p.step || (OSTEPS.find(s => s[0] === o.stage) || ['', 'starting'])[1];
+  return p.step || (OSTEPS().find(s => s[0] === o.stage) || ['', 'starting'])[1];
 }
 // Os passos do PC (preparar, compilar, testar) e as fases do passo em curso, com o que já está feito.
-const PSTEP = { prepare: 'Prepare', build: 'Build', boot: 'Test on the PC', compare: 'Compare', claude: 'Fix by Claude' };
+const PSTEP = { prepare: 'Prepare', build: 'Build', get boot() { return 'Test on ' + side(); }, compare: 'Compare', claude: 'Fix by Claude' };
 function pcSteps(p) {
   if (!p.step_pt && !(p.phases || []).length) return '';
   const done = (p.steps_done || []).map(k => `<span class="ps done">✓ ${esc(PSTEP[k] || k)}</span>`).join('');
@@ -1566,7 +1600,7 @@ function renderOrders() {
         <div class="live">${orderLive(o)}</div></div></button>`;
   }).join('');
   const done = (h.orders || []).some(o => !['running', 'queued'].includes(o.status));
-  v.innerHTML = `<div class="vhead"><div><h2>Requests</h2><div class="sub">From download to library: the PC does the work, you can keep using the Deck</div></div>
+  v.innerHTML = `<div class="vhead"><div><h2>Requests</h2><div class="sub">From download to library: ${isLocal() ? 'this Deck does the work in the background' : 'the PC does the work, you can keep using the Deck'}</div></div>
     ${done ? '<button class="btn f" data-hint="Clear" onclick="clearRequests()">Clear finished</button>' : ''}</div>
     ${pcWork(h)}
     ${pendingBanner(h)}
@@ -1713,7 +1747,7 @@ function chatWrite(id) {
 }
 function cancelOrder(o) {
   openLayer(`<div class="sheet confirm"><h3>Cancel the request for ${esc(o.title)}?</h3>
-    <p>What was already downloaded stays on the PC: requesting it again resumes from there.</p>
+    <p>What was already downloaded stays on ${side()}: requesting it again resumes from there.</p>
     <div class="acts"><button class="btn f" onclick="closeLayer()">No</button>
       <button class="btn d f" onclick="doCancel('${o.id}')">Cancel request</button></div></div>`);
 }
@@ -1728,13 +1762,85 @@ async function retryOrder(o) {
   refreshHome();
 }
 
+// -- Definições: o modo (PC, Sem PC, Automático) ---------------------------------------------------
+// The choice lives on the Deck (the mode file the launcher and the Decky plugin read), so it goes
+// through whoever serves this page: the PC writes it over SSH, the Deck service itself. "go" is
+// where to reopen now so that it applies at once (null: from the next time the Manager opens).
+const MODES = [
+  ['pc', 'PC', 'Your PC downloads, builds and tests the games and sends them to this Deck. The PC must be on.'],
+  ['local', 'Without PC', 'This Deck downloads, builds and installs the games by itself, with no PC.'],
+  ['auto', 'Automatic', 'The PC when it answers, this Deck when it does not.'],
+];
+// Whether the Sem PC mode is on this Deck (its service answers; /api/ping allows any origin).
+async function deckReady() {
+  const c = new AbortController();
+  const t = setTimeout(() => c.abort(), 2500);
+  try {
+    const r = await fetch(LOCAL + '/api/ping', { cache: 'no-store', signal: c.signal });
+    return (await r.json()).app === 'gestor-rexnative';
+  } catch (e) { return false; } finally { clearTimeout(t); }
+}
+async function loadMode() {
+  const [m, ready] = await Promise.all([api('/api/remote/mode').catch(e => ({ error: e.message })), deckReady()]);
+  S.modes = { mode: m.mode, serving: m.serving, error: m.error || null, ready };
+  if (S.tab !== 'settings' || S.layers.length) return;
+  const id = S.cur && S.cur.dataset.id;
+  renderSettings();
+  const el = id && $$('.f', $('#v-settings')).find(e => e.dataset.id === id && !e.disabled);
+  if (el) focus(el, false); else restoreFocus();
+}
+function renderSettings() {
+  const v = $('#v-settings');
+  const m = S.modes;
+  const head = '<div class="vhead"><div><h2>Settings</h2><div class="sub">Where the Manager does its work</div></div></div>';
+  if (!m) { v.innerHTML = head + '<div class="empty"><div class="spin" style="margin:0 auto 14px"></div>Reading the mode…</div>'; return; }
+  const rows = MODES.map(([k, name, text]) => {
+    const off = k !== 'pc' && !m.ready;
+    const on = m.mode === k;
+    return `<button class="mopt f${on ? ' on' : ''}" data-id="mode-${k}" data-hint="${on ? 'In use' : 'Use this'}" onclick="setMode('${k}')"${off ? ' disabled' : ''}>
+      <span class="box"></span><span class="mt"><b>${esc(name)}</b>${on ? '<span class="bd g">In use</span>' : ''}
+        <span class="d">${esc(text)}</span>${off ? '<span class="d w">Install the Sem PC mode on this Deck first</span>' : ''}</span></button>`;
+  }).join('');
+  const pc = (S.home || {}).pc;
+  const now = m.serving === 'local' ? 'Now the Manager runs on this Deck (Sem PC mode).'
+    : m.serving === 'pc' ? `Now the Manager runs on the PC${pc ? ' ' + pc : ''}.` : '';
+  v.innerHTML = `${head}<div class="setsec"><h4>Mode</h4><div class="opts">${rows}</div>
+    ${m.error ? `<div class="note">Could not read the mode: ${esc(m.error)}</div>` : ''}
+    ${now ? `<div class="note">${esc(now)}</div>` : ''}</div>`;
+  // The first time, the focus starts on the mode in use.
+  const cur = $(`.mopt.on:not([disabled])`, v);
+  if (!S.lastFocus.settings && cur) S.lastFocus.settings = cur.dataset.id;
+}
+async function setMode(k) {
+  const m = S.modes || {};
+  const name = (MODES.find(x => x[0] === k) || [k, k])[1];
+  if (S.modeBusy) return;
+  if (k === m.mode && k === m.serving) { toast(name + ' is already in use'); return; }
+  S.modeBusy = true;
+  try {
+    const r = await api('/api/remote/mode', { body: { mode: k } });
+    S.modes = Object.assign({}, m, { mode: r.mode || k, serving: r.serving || m.serving, error: null });
+    if (r.go) {
+      toast(r.go.startsWith(LOCAL) ? 'Opening the Manager on this Deck…' : 'Opening the Manager on the PC…');
+      // The Settings tab again, there: the new mode shows as the one in use.
+      location.replace(r.go + (r.go.includes('#') ? '&' : '#') + 'tab=settings');
+      return;
+    }
+    toast(k === 'pc' && S.modes.serving === 'local' ? 'PC: the PC does not answer now; it is used from the next time the Manager opens'
+      : name + ': it applies from the next time the Manager opens');
+    S.lastFocus.settings = 'mode-' + k;
+    if (S.tab === 'settings' && !S.layers.length) { renderSettings(); restoreFocus(); }
+  } catch (e) { toast(e.message, true); }
+  finally { S.modeBusy = false; }
+}
+
 // -- sair ---------------------------------------------------------------------------------------
 function openExit() {
   if (S.layers.length) return;
   const p = (S.home || {}).pending || {};
   const titles = p.titles || [];
   openLayer(`<div class="sheet confirm"><h3>Exit the Manager?</h3>
-    ${p.add || p.remove ? `<p>${titles.length ? 'Joining the library now: <b style="color:var(--text)">' + titles.map(esc).join(', ') + '</b>. ' : ''}Steam on the Deck closes and reopens for a few seconds to do this.</p>` : '<p>Requests keep running on the PC: whatever finishes meanwhile shows up next time.</p>'}
+    ${p.add || p.remove ? `<p>${titles.length ? 'Joining the library now: <b style="color:var(--text)">' + titles.map(esc).join(', ') + '</b>. ' : ''}Steam on the Deck closes and reopens for a few seconds to do this.</p>` : `<p>Requests keep running on ${side()}${isLocal() ? ' in the background' : ''}: whatever finishes meanwhile shows up next time.</p>`}
     <div class="acts"><button class="btn f" onclick="closeLayer()">Stay</button>
       <button class="btn f" onclick="closeLayer();openWhatsNew()">What's new (v${esc((S.ver || {}).running || '?')})</button>
       <button class="btn p f" onclick="doExit()">Exit</button></div></div>`, { focus: '.btn.p' });
@@ -1781,7 +1887,15 @@ document.addEventListener('keydown', e => {
   if (l && l.type && e.key.length === 1 && /[\w ]/.test(e.key)) { l.type(e.key.toLowerCase()); e.preventDefault(); return; }
   if (l && l.del && e.key === 'Backspace') { l.del(); e.preventDefault(); return; }
   const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
-  if (map[e.key]) { move(map[e.key]); e.preventDefault(); return; }
+  if (map[e.key]) {
+    e.preventDefault();
+    // The same press seen twice (Steam Input can send the D-pad as the pad and as arrow keys): one move.
+    const i = { up: 12, down: 13, left: 14, right: 15 }[map[e.key]];
+    if (pad.moved && pad.moved.i === i && pad.moved.src === 'pad' && Date.now() - pad.moved.at < 60) return;
+    pad.moved = { i, at: Date.now(), src: 'key' };
+    move(map[e.key]);
+    return;
+  }
   if (e.key === 'Enter' || e.key === ' ') { activate(); e.preventDefault(); return; }
   if (e.key === 'Escape' || e.key === 'Backspace') { back(); e.preventDefault(); return; }
   if (e.key === 'q' || e.key === 'PageUp') { nextTab(-1); return; }
@@ -1810,10 +1924,12 @@ function press(b) {
     case 6: jumpGrid(-1); break;
     case 7: jumpGrid(1); break;
     case 9: { const a = actions().menu; if (a) a(); else openExit(); break; }
-    case 12: move('up'); break;
-    case 13: move('down'); break;
-    case 14: move('left'); break;
-    case 15: move('right'); break;
+    case 12: case 13: case 14: case 15: {
+      if (pad.moved && pad.moved.i === b && pad.moved.src === 'key' && Date.now() - pad.moved.at < 60) break;
+      pad.moved = { i: b, at: Date.now(), src: 'pad' };
+      move(['up', 'down', 'left', 'right'][b - 12]);
+      break;
+    }
   }
 }
 function padLoop(t) {
@@ -1824,17 +1940,30 @@ function padLoop(t) {
   for (const g of gps) {
     pad.ids[g.id] = g.mapping || 'no mapping';
     g.buttons.forEach((x, i) => { if (x.pressed) b[i] = true; });
-    // O analógico esquerdo como a cruz; sem mapeamento, a cruz pode vir como eixos 6 e 7.
+    // O analógico esquerdo como a cruz, só pelo eixo mais forte: um "para baixo" um pouco torto
+    // passava também os 0,6 do lado e andava para baixo e para o lado ao mesmo tempo. O eixo que já
+    // manda continua a mandar até descer dos 0,4 (sem saltar de um para o outro a meio).
     const ax = g.axes[0] || 0, ay = g.axes[1] || 0;
-    if (ay < -0.6) b[12] = true; if (ay > 0.6) b[13] = true; if (ax < -0.6) b[14] = true; if (ax > 0.6) b[15] = true;
+    const held = pad.dir;
+    const keepV = (held === 12 || held === 13) && Math.abs(ay) > 0.4;
+    const keepH = (held === 14 || held === 15) && Math.abs(ax) > 0.4;
+    if (keepV || (!keepH && Math.abs(ay) >= Math.abs(ax) && Math.abs(ay) > 0.6)) b[ay < 0 ? 12 : 13] = true;
+    else if (keepH || Math.abs(ax) > 0.6) b[ax < 0 ? 14 : 15] = true;
     if (g.mapping !== 'standard' && g.axes.length >= 8) {
       if (g.axes[7] < -0.5) b[12] = true; if (g.axes[7] > 0.5) b[13] = true;
       if (g.axes[6] < -0.5) b[14] = true; if (g.axes[6] > 0.5) b[15] = true;
     }
   }
+  // Uma direção de cada vez: a que já está carregada manda enquanto não a largas (o polegar que
+  // rola para a diagonal não leva o foco para o lado); numa diagonal carregada de uma vez, ganha
+  // a vertical. Largada a primeira, a outra que ainda está carregada anda como um toque novo.
+  let dir = pad.dir && b[pad.dir] ? pad.dir : [13, 12, 15, 14].find(i => b[i]);
+  for (const i of [12, 13, 14, 15]) if (i !== dir) b[i] = false;
+  if (dir !== pad.dir) pad.prev[dir] = false;
+  pad.dir = dir;
   for (let i = 0; i < 16; i++) {
     if (b[i] && !pad.prev[i]) { press(i); pad.held[i] = t + 380; pad.last = Date.now(); }
-    else if (b[i] && i >= 12 && i <= 15 && t > pad.held[i]) { press(i); pad.held[i] = t + 85; }
+    else if (b[i] && i >= 12 && i <= 15 && t > pad.held[i]) { press(i); pad.held[i] = t + 130; }  // held: 7 or 8 a second, easy to stop on a game
     else if (b[i] && (i === 6 || i === 7) && t > pad.held[i]) { press(i); pad.held[i] = t + 260; }  // held: letter after letter
   }
   pad.prev = b;
@@ -1844,14 +1973,17 @@ function padLoop(t) {
 // -- arranque ---------------------------------------------------------------------------------
 async function boot() {
   for (const b of $$('#tabs .tab')) b.onclick = () => switchTab(b.dataset.tab);
+  applyMode();
   const P = new URLSearchParams(location.hash.slice(1));
   if (P.get('t')) {
     try { await api('/api/pair/session', { body: { token: P.get('t') } }); } catch (e) { /* mostra emparelhar */ }
-    history.replaceState(null, '', location.pathname);
   }
+  if (P.get('tab')) S.openTab = P.get('tab');  // depois de mudar de modo: as Definições outra vez
+  if (P.get('t') || P.get('tab')) history.replaceState(null, '', location.pathname);
   let st;
   try { st = await api('/api/pair/state'); } catch (e) { setTimeout(boot, 3000); return; }
-  if (!st.paired) { showPair(); requestAnimationFrame(padLoop); return; }
+  // Sem PC não há nada a emparelhar (o serviço do Deck só aceita este Deck).
+  if (!st.paired && !isLocal()) { showPair(); requestAnimationFrame(padLoop); return; }
   $('#top').classList.remove('hide');
   $('#v-boot').classList.add('hide');
   await refreshHome();
@@ -1860,7 +1992,7 @@ async function boot() {
   setTimeout(() => loadLog(), 5000);  // quantas mudanças novas no ReXNative (no separador)
   setInterval(() => { if (S.tab !== 'log') loadLog(); }, 600000);
   setInterval(() => loadVersion(), 600000);
-  switchTab(firstTab());
+  switchTab(tabs().includes(S.openTab) ? S.openTab : firstTab());
   requestAnimationFrame(padLoop);
   // Atualiza depressa com pedidos a decorrer, devagar sem eles; e diz ao PC que o Gestor está aberto.
   const tick = async () => {

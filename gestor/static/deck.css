@@ -341,3 +341,21 @@ button.gch.focus, button.gch:focus { border-color: var(--accent); background: #f
 .lfoot { color: var(--muted); font-size: 14px; margin-top: 14px; padding: 10px; border-radius: 10px; border: 2px solid transparent;
   outline: none; background: #ffffff08; }
 .lfiles { color: var(--dim); font: 12.5px/1.5 "DejaVu Sans Mono", Consolas, monospace; margin-top: 6px; overflow-wrap: anywhere; }
+
+/* Settings: the mode (PC, Without PC, Automatic), one choice */
+.setsec { max-width: 900px; margin: 0 4px; }
+.setsec h4 { margin: 0 0 4px; font-size: 16px; color: var(--muted); font-weight: 800; letter-spacing: .3px; }
+.setsec .note { color: var(--muted); font-size: 15px; margin-top: 14px; }
+.mopt { display: flex; align-items: flex-start; gap: 14px; padding: 14px 16px; border-radius: 12px; background: #ffffff0d;
+  border: 2px solid transparent; cursor: pointer; outline: none; text-align: left; width: 100%; }
+.mopt .box { width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--muted); flex: none; margin-top: 1px;
+  display: grid; place-items: center; }
+.mopt.on .box { border-color: var(--accent); }
+.mopt.on .box::after { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--accent); }
+.mopt .mt { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.mopt .mt b { font-size: 18px; font-weight: 700; }
+.mopt .d { flex-basis: 100%; color: var(--muted); font-size: 15px; }
+.mopt .d.w { color: var(--warn); }
+.mopt.focus, .mopt:focus { border-color: var(--accent); background: #ffffff16; }
+.mopt[disabled] { cursor: default; }
+.mopt[disabled] .mt b, .mopt[disabled] .box { opacity: .45; }
