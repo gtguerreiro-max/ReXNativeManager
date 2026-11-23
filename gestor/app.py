@@ -846,8 +846,8 @@ def game_report(slug: str, body: dict = Body(...)):
     """Guarda o relatório e, se pedido, o Claude (modelo forte) investiga-o e corrige o que puder."""
     w = _work(slug)
     text = (body.get('text') or '').strip()
-    # Only the crash log: Claude reads this PC's newest log of a crash and fixes from it, without
-    # starting the game.
+    # Just the crash log: Claude starts from this PC's newest log of a crash (and opens the game
+    # only when the fix needs it).
     crash = bool(body.get('crash_only'))
     if crash and not text:
         text = 'The game crashed'
@@ -2238,12 +2238,13 @@ def remote_report(slug: str, body: dict = Body(...)):
     w = _work(slug)
     chips = [c for c in body.get('chips') or [] if c in REPORT_CHIPS]
     text = (body.get('text') or '').strip()[:2000]
-    # Only the crash log: Claude reads the Deck's log of the crash and fixes from it; nothing opens
-    # (no capture, no save or snapshot to replay, no game started on the PC to look).
+    # Just the crash log: Claude starts from the Deck's log of the crash. No screenshot on the Deck
+    # (it opens the game there); the save and the snapshots still come, for when the fix needs the
+    # game opened on the PC.
     crash = bool(body.get('crash_only'))
     if crash:
         chips = sorted(set(chips) | {'fecha'})
-        body = dict(body, capture=False, saves=False, snapshots=False)
+        body = dict(body, capture=False)
     if not chips and not text:
         raise HTTPException(400, 'pick what you see or write a description')
     what = '; '.join([REPORT_CHIPS[c] for c in chips] + ([text] if text else []))

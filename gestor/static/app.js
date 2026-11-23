@@ -725,7 +725,7 @@ async function reportDialog() {
         <span><input type="checkbox" class="rpsnap" value="${esc(s.name)}" checked> ${esc(snapWhen(s.name))}${s.trace.length ? '' : ' · no trace'}</span></label>`).join('')}</div>`
     : `<p class="small muted" style="margin:10px 0 0">Tip: at the place, in the game, open the settings menu (Back + Start or F1; on the Deck View + Menu) and press Y. That moment is saved as a snapshot (the picture and the next frames), and it shows here: the report sends it, so Claude sees what you saw and replays those frames.</p>`}
     <label style="display:block;margin-top:10px"><input type="checkbox" id="rpfix" checked> Ask Claude to investigate and fix it (strong model; opens the game on the PC to look)</label>
-    <label style="display:block;margin-top:6px"><input type="checkbox" id="rpcrash"> Only read the crash log: Claude fixes it from this PC's newest log of a crash, without opening the game (the fixed game is then built and started once to check it)</label>`, 'Send');
+    <label style="display:block;margin-top:6px"><input type="checkbox" id="rpcrash"> Just the crash log: Claude starts from this PC's newest log of a crash, and opens the game only if the fix needs it (the fixed game is then built and started once to check it)</label>`, 'Send');
   if (!ok) return;
   const body = { kind: $('#rpkind').value, where: $('#rpwhere').value, text: $('#rptext').value.trim(),
     captures: [...document.querySelectorAll('.rpcap')].filter(c => c.checked).map(c => c.value), fix: $('#rpfix').checked,

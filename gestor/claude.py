@@ -330,10 +330,14 @@ leave the line out if none>
 
 
 CRASH_PROMPT = """An Xbox 360 game recompiled with ReXGlue and drawn by ReXNative crashed for the user, who
-asks for a fix from the crash log ALONE. Do not start the game: no live.ps1, no traces, no
-RenderDoc, no runs of your own (the user does not want the game opened for this; the app builds
-it after you and checks once that it still starts). Read the log, find the cause in the code, fix
-it, and say what you did.
+sends the crash log and nothing else. Start from the log: read it and find the cause in the code
+first. Open the game only when the fix needs it (to reproduce what the log does not hold, to find
+more missing functions, to check the fix at the place); then `live.ps1 start -Dir "{run}" -Exe
+{name}.exe -Route "<s>:pad:A:200,..."` (with the player's save when one is in the PC copy:
+Continue or Load, never a new game), wait in short steps (`Start-Sleep 20`, `live.ps1 log
+"<pattern>"`), never minutes blind, and `live.ps1 stop` when you are done. Below, `live.ps1` is
+`powershell -ExecutionPolicy Bypass -File scripts\\live.ps1`. The app builds the game after
+you and checks once that it still starts. Fix it, and say what you did.
 
 Game: {title} (folder name {slug})
 Game work folder: {work} (hints.txt, not-starts.txt, the manifest {name}_manifest.toml with each
@@ -359,8 +363,9 @@ The user's report:
      rexnative/project.py say how a work folder gets a function start (hints.txt for the .xex,
      `0xADDRESS 0xSIZE`, 0 = codegen finds the end; a DLL module through its own entry in the
      manifest), so that codegen keeps it; then codegen and the build run again
-     (`python -m rexnative project "{work}" --build`). Not --discover or --find-functions: they
-     start the game.
+     (`python -m rexnative project "{work}" --build`). When one missing function hides more,
+     `--find-functions` (the loaded image) or `--discover N` (runs the game and adds each one it
+     reports) find them in one go.
    - A fault in ReXNative's or the SDK's code (rexgpu, rexnative, a backtrace through them): the
      code at that offset; docs/DEBUGGING.md, docs/GAMES.md (similar crashes already fixed).
    - Anything else: reason from the log and the code; docs/NOTES.md is long (list its headings
@@ -370,8 +375,9 @@ The user's report:
    could change them), this game's own files otherwise. Then ONE build:
    `python -m rexnative project "{work}" --build` must succeed. Commit ReXNative changes
    (identity and trailer in the rules).{push}
-4. Start the summary with "NO FIX:" only when the log does not hold enough to fix it, saying what
-   is missing (then a normal report, which may start the game, or a snapshot at the place).
+4. Try a fix: start the summary with "NO FIX:" only when no attempt can work now (or the ones
+   you made and checked failed), saying what you tried and what is missing (a snapshot at the
+   place, say).
 
 End with a SHORT summary in English for the user: the cause, what you changed (files, commits),
 and where in the game to check it.
@@ -621,14 +627,15 @@ def investigate(job, work, report):
         logs = crash_logs(work, report)
         logs_txt = ("The logs (the Deck's are deck-*.log; the crash report is at the end of the one "
                     'that crashed):\n' + ''.join('  %s\n' % f for f in logs)) if logs else (
-                    'No log with a crash report was found (on the Deck or on this PC): say so with NO FIX.\n')
+                    'No log with a crash report was found (on the Deck or on this PC): reproduce the crash '
+                    'in the game if you can (it then writes one), else say so with NO FIX.\n')
         prompt = CRASH_PROMPT.format(
             title=g['title'], slug=g['slug'], work=work, run=os.path.join(work, 'run'), name=name,
             rexnative_dir=rex, rexnative_repo=cfg.get('rexnative_repo'), where=report.get('where', '-'),
             text=report.get('text', '').strip() or '-', logs=logs_txt, push=push_text(cfg),
             rules=rules_text(cfg), work_roots=work_roots_text(cfg))
         return run(job, prompt, cwd=rex, work=work, tag='report',
-                   intro='Claude reads the crash log (%s): the game does not open' % report.get('where'),
+                   intro='Claude starts from the crash log (%s)' % report.get('where'),
                    extra_dirs=sorted({os.path.dirname(f) for f in logs}))
     run_dir = os.path.join(work, 'run')
     with_trace = any(sn['trace'] for sn in snaps)
