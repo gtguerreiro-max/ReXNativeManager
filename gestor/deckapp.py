@@ -15,7 +15,7 @@ from . import config, deck, lan, state
 NAME = 'Gestor ReXNative'
 DIR = '.local/share/gestor-rexnative'  # na pasta do utilizador deck
 KIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deckkit')
-VERSION = 3  # o lançador (deckkit/): sobe quando os ficheiros mudam; a app avisa o Deck que tem um antigo
+VERSION = 4  # o lançador (deckkit/): sobe quando os ficheiros mudam; a app avisa o Deck que tem um antigo
 # 3: o modo (PC, Sem PC, Automático) no ficheiro mode, ao lado do gestor.conf
 
 GREEN = (95, 191, 63)

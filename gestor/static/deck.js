@@ -385,7 +385,7 @@ function render(t) {
 const deckSig = h => JSON.stringify([h.games, h.pending, h.deck.space, h.deck.reachable]);
 const ordersShape = h => JSON.stringify([(h.orders || []).map(o => [o.id, o.status, o.stage, o.kind, o.error, !!(o.progress || {}).step_pt, (o.report || {}).status]), h.pending]);
 async function refreshHome(readDeck, manual) {
-  if (S.tab === 'pair') return;
+  if (S.tab === 'pair' || S.leaving) return;  // leaving: the launcher is opening the other side
   try {
     const h = await api('/api/remote/home' + (readDeck ? '?refresh=true' : ''), { timeout: readDeck ? 60000 : 10000 });
     S.online = true;
@@ -1900,6 +1900,15 @@ async function setMode(k) {
   try {
     const r = await api('/api/remote/mode', { body: { mode: k } });
     S.modes = Object.assign({}, m, { mode: r.mode || k, serving: r.serving || m.serving, error: null });
+    if (r.relaunch) {
+      // The launcher (gestor.sh) closes this window and opens the Manager again on the other side,
+      // in its Settings: a page moved from one Manager to the other froze the Deck's Firefox at
+      // times. A launcher that did not do it in 15 s: the page moves itself, as before.
+      S.leaving = true;
+      toast(r.relaunch === 'local' ? 'Opening the Manager on this Deck…' : 'Opening the Manager on the PC…');
+      if (r.go) setTimeout(() => location.replace(r.go + (r.go.includes('#') ? '&' : '#') + 'tab=settings'), 15000);
+      return;
+    }
     if (r.go) {
       toast(r.go.startsWith(LOCAL) ? 'Opening the Manager on this Deck…' : 'Opening the Manager on the PC…');
       // The Settings tab again, there: the new mode shows as the one in use.
@@ -1911,7 +1920,7 @@ async function setMode(k) {
     S.lastFocus.settings = 'mode-' + k;
     if (S.tab === 'settings' && !S.layers.length) { renderSettings(); restoreFocus(); }
   } catch (e) { toast(e.message, true); }
-  finally { S.modeBusy = false; }
+  finally { if (!S.leaving) S.modeBusy = false; }
 }
 
 // -- Settings > Accounts: archive.org, Claude, GitHub on this Deck -------------------------------
@@ -2248,7 +2257,7 @@ async function boot() {
   // chega ao Firefox).
   let beating = false;
   setInterval(() => {
-    if (beating || S.tab === 'pair') return;  // um sinal ainda sem resposta: não se juntam mais
+    if (beating || S.tab === 'pair' || S.leaving) return;  // um sinal ainda sem resposta: não se juntam mais
     beating = true;
     api('/api/remote/heartbeat', { body: { pads: pad.ids, pad_last: pad.last, key_last: pad.key, ua: navigator.userAgent } })
       .catch(() => {}).finally(() => { beating = false; });

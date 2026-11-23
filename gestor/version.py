@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.27.6'
+VERSION = '1.27.7'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.27.7', '2026-11-23', [
+        "Deck: changing the mode in Settings no longer takes the Manager down. Moving between "
+        "the PC's Manager and the Deck's own (PC or Automatic from Without PC, or Without PC from "
+        "the PC) froze the Deck's Firefox at times, and then it closed. Now the Manager closes "
+        "and opens again by itself on the new side, in Settings. This needs Deck launcher v4: "
+        "the Manager asks you to update it.",
+    ]),
     ('1.27.6', '2026-11-23', [
         "Native vs classic: when the captures are the same pixels, the game is marked the same "
         "without asking the model. The model had called identical Marble Blast Ultra captures "

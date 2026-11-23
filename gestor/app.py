@@ -1616,19 +1616,25 @@ def remote_mode_set(body: dict = Body(...)):
     mode = str(body.get('mode') or '')
     if mode not in DECK_MODES:
         raise HTTPException(400, 'unknown mode: %s' % mode[:20])
+    # Sem PC: o lançador do Deck (gestor.sh v4) fecha o Firefox e abre-o outra vez no serviço do Deck
+    # (o ficheiro relaunch); um lançador mais antigo não o sabe fazer e a página passa ela mesma para
+    # lá. Passar a página de um Gestor para o outro prendia às vezes o Firefox do Deck.
+    again = (' && if grep -qs relaunch ~/{d}/gestor.sh; then date +%s > ~/{d}/relaunch && echo relaunch; fi'
+             .format(d=deckapp.DIR) if mode == 'local' else '')
     try:
-        r = deck.Deck().ssh('mkdir -p ~/%s && echo %s > ~/%s && echo saved' % (
-            deckapp.DIR, mode, DECK_MODE_FILE), timeout=25)
+        r = deck.Deck().ssh('mkdir -p ~/%s && echo %s > ~/%s && echo saved%s' % (
+            deckapp.DIR, mode, DECK_MODE_FILE, again), timeout=25)
     except (RuntimeError, subprocess.TimeoutExpired) as e:
         raise HTTPException(503, 'the PC could not reach the Deck: %s' % e)
     if 'saved' not in (r.stdout or ''):
         raise HTTPException(502, 'the Deck did not save the mode: %s' % (r.stderr or r.stdout)[-200:])
-    # Sem PC: a página passa já para o serviço do Deck; PC e Automático: fica aqui. A sessão do
+    # Sem PC: a página passa para o serviço do Deck; PC e Automático: fica aqui. A sessão do
     # Gestor fecha aqui sem esvaziar os atalhos pendentes: o Gestor continua aberto no Deck (no
     # serviço local) e reiniciar o Steam fechava-o. Ficam para o próximo fecho com o PC.
     if mode == 'local':
         _session['open'] = False
-    return {'mode': mode, 'serving': 'pc', 'go': DECK_LOCAL + '/deck' if mode == 'local' else None}
+    return {'mode': mode, 'serving': 'pc', 'go': DECK_LOCAL + '/deck' if mode == 'local' else None,
+            'relaunch': 'local' if 'relaunch' in (r.stdout or '') else None}
 
 
 @app.post('/api/remote/play/{slug}')

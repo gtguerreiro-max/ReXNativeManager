@@ -70,8 +70,13 @@ async function ping(u) {
     return d.app === 'gestor-rexnative';
   } catch (e) { return false; } finally { clearTimeout(t); }
 }
-// O Deck não leva o token do PC (o serviço do Deck não o usa).
-function go(u) { location.replace(u === LOCAL ? LOCAL + '/deck' : u + '/deck#t=' + encodeURIComponent(token)); }
+// O Deck não leva o token do PC (o serviço do Deck não o usa). tab: o separador a abrir (as
+// Definições, depois de uma mudança de modo: o gestor.sh abre o Firefox outra vez no lado novo).
+const tab = /^[a-z]+$/.test(P.get('tab') || '') ? P.get('tab') : '';
+function go(u) {
+  location.replace(u === LOCAL ? LOCAL + '/deck' + (tab ? '#tab=' + tab : '')
+    : u + '/deck#t=' + encodeURIComponent(token) + (tab ? '&tab=' + tab : ''));
+}
 // quiet: a procura sozinha de 5 em 5 s, com o ecrã do "não encontrei" à vista (e o botão que lá está).
 async function look(quiet) {
   if (looking) return;
