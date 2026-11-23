@@ -98,7 +98,9 @@ What to do:
    general change looks risky for the other games, gate it (see the rules) and do it. Check that
    the game builds: `python -m rexnative project "{work}" --build` from the worktree (the
    environment already has the REXNATIVE_* variables), then check it running when you can:
-   `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1 start -Dir "{work}\\run" -Exe <name>.exe`,
+   `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1 start -Dir "{work}\\run" -Exe <name>.exe -Stock`
+   (-Stock: the game without DLSS 5, its look, the upscaler, the resolution scale, frame
+   generation and other extras its settings may turn on, so the picture is the emulation's),
    `live.ps1 frame <tag>` (look at the PNG), `live.ps1 log <pattern>`, and `live.ps1 stop` when
    done. Your live game has a state folder of its own (REXNATIVE_LIVE_STATE is set): no other
    session's game is in your way. Starting the game costs minutes: keep one running for the
@@ -274,6 +276,12 @@ is in your way, and you never stop someone else's.
 {first_steps}3. Sort the fault before reading code (seconds each, on the live game; docs/DEBUGGING.md has the
    whole table). A trace played without the loop and dump flags keeps drawing, and `frame`,
    `capture`, `debug`, `snap`, `drawlog` and `control "set ..."` work on it as on the game:
+   - First, the game stock: `start` and `play` with `-Stock` (scripts\\stock_flags.txt: no DLSS 5
+     or its look, upscaler, resolution scale, frame generation, forced anisotropy, HDR or pixel
+     overrides). The game's settings often turn them on, and then a picture, a before/after or a
+     comparison measures them, not the emulation (DLSS 5 does not even draw the same frame twice).
+     Turn one back on (`-Extra` after `-Stock`) only when the fault is in it or shows only with it.
+     (`-Stock` is not `control "renderer stock"` below.)
    - Is it ReXNative's renderer? `live.ps1 control "renderer stock"`, `frame`, then
      `control "renderer native"`: ReXGlue's Xenos renderer at the same spot. Wrong there too: not
      ReXNative's renderer (the game's settings or layer, the SDK, the game itself). Right there:
@@ -412,13 +420,14 @@ def crash_logs(work, report):
 
 
 FIRST_SNAPSHOT = """1. Start from the player's snapshot (above): no game to reach. Look at its picture, then
-   `live.ps1 play "<its trace>" -Dir "{run}" -Exe {name}.exe -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
-   draws its frames with the PC's build and exits in about 20 s (the images:
+   `live.ps1 play "<its trace>" -Dir "{run}" -Exe {name}.exe -Stock -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
+   draws its frames with the PC's build, stock (without the extras the settings may turn on) and exits in about 20 s (the images:
    {run}\\live\\cap\\f<i>-native.png, from the second time through). Set them beside the picture:
    - Wrong the same way: the fault is in the game's data or in how ReXNative draws it, and this
      trace is your fast loop: after each rebuild, play it again. It is the place's test scene too.
-   - Right on the PC but wrong in the picture: the difference is the machine's. Play it again with
-     that machine's settings (for the Deck: copy the Deck's settings file over {run}\\{name}.toml,
+   - Right stock but wrong in the picture: the difference is the settings' or the machine's. Play
+     it again without -Stock (the PC's own settings: wrong now, an extra's path) and with that
+     machine's settings (for the Deck: copy the Deck's settings file over {run}\\{name}.toml,
      play, then put the PC's file back). Wrong now: a setting's path (the upscaler, its mode...).
      Still right: the Deck's GPU and driver under Proton; reason from the picture, the Deck's log
      and the code (you cannot use the Deck).
@@ -426,20 +435,20 @@ FIRST_SNAPSHOT = """1. Start from the player's snapshot (above): no game to reac
      reach the place live instead (2.).
 2. Reach the place live only when you need the running game (a fault the trace does not hold:
    timing, or state from earlier frames, see 3.; or the last check after the fix):
-   `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."` (`pad:` presses the
-   game's own pad, no window focus needed), with the player's save (Continue or Load, never a new
+   `live.ps1 start -Dir "{run}" -Exe {name}.exe -Stock -Route "<s>:pad:A:200,..."` (`pad:` presses
+   the game's own pad, no window focus needed), with the player's save (Continue or Load, never a new
    game); wait in short steps (`Start-Sleep 20`, then `live.ps1 frame <tag>`), never minutes blind.
 """
 
-FIRST_PLACE = """1. Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Route "<s>:pad:A:200,..."`
+FIRST_PLACE = """1. Reach the place ONCE: `live.ps1 start -Dir "{run}" -Exe {name}.exe -Stock -Route "<s>:pad:A:200,..."`
    (`pad:` presses the game's own pad, no window focus needed; `<s>:hold:ENTER:150` sends keys).
    With the player's save, Continue or Load, never a new game. Wait in short steps
    (`Start-Sleep 20`, then `live.ps1 frame <tag>` and look at the PNG), never minutes blind.
-   A problem seen on the Deck: start it with the Deck's settings (copy the Deck's settings file
-   over {run}\\{name}.toml first, and put the PC's back when you are done).
+   A problem seen on the Deck: start it without -Stock, with the Deck's settings (copy the Deck's
+   settings file over {run}\\{name}.toml first, and put the PC's back when you are done).
 2. Record it at once, before changing anything: `live.ps1 record 3` prints a frame trace (a .rxt
    in {run}\\live\\trace). It is your fast loop: after a rebuild,
-   `live.ps1 play "<trace>" -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
+   `live.ps1 play "<trace>" -Stock -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
    draws those frames with the new build and exits in about 20 s (the images:
    {run}\\live\\cap\\f<i>-native.png, from the second time through), with no game to reach again.
    It is also this game's test scene: add a line `SCENE: <trace path>` after SUSPECTS (at most 2);
@@ -457,7 +466,8 @@ Game: {title} (folder name {slug}); the built game: {run}\\{name}.exe. Below, `l
 `powershell -ExecutionPolicy Bypass -File scripts\\live.ps1` (in your working directory); your live game
 has a state folder of its own.{route_hint}
 
-1. `live.ps1 start -Dir "{run}" -Exe {name}.exe`, then drive it with the game's own pad through the
+1. `live.ps1 start -Dir "{run}" -Exe {name}.exe -Stock` (the game without the extras its settings
+   may turn on), then drive it with the game's own pad through the
    control file (no window focus needed): `live.ps1 control "pad A 200"`, `"pad START 400"`,
    `"pad DOWN 150"`, `"pad A+B 200"`, a stick held: `"pad none lx=32767 800"` (lx ly rx ry from
    -32768 to 32767). Look every step or two with `live.ps1 frame <tag>` and read the PNG. Wait in
