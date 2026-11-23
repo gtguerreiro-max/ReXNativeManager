@@ -142,6 +142,14 @@ def delete(slug, sid):
 
 
 # -- gravar ---------------------------------------------------------------------------------------
+# Os testes veem o que o jogo desenha, sem o que se põe por cima: o DLSS 5 (o look, um modelo
+# neural), o upscaler e a escala de resolução, a geração de frames e a anisotropia forçada. Com
+# eles o nativo comparava-se ao clássico pelo look e não pela emulação (e o DLSS 5 nem dá sempre a
+# mesma imagem duas vezes). A corrida com as definições do Deck passa as dela e fica como está.
+RAW_FLAGS = ('--rexnative_dlss5=false', '--rexnative_upscaler=false', '--rexnative_resolution_scale=1',
+             '--rexnative_anisotropy=1', '--rexnative_frame_generation=false')
+
+
 def live_flags(run):
     """O que um jogo precisa para se lhe pedir uma cena enquanto corre (como live.ps1 start): o
     ficheiro de controlo, a pasta dos traces e a das capturas."""
@@ -214,7 +222,7 @@ def play(job, work, trace, out_dir, extra=()):
             '--ui.title=%s - ReXNative Manager test scene: please do not play in this window' % title,
             '--rexnative_capture_dir=%s' % out_dir,
             '--rexnative_trace_play=%s' % trace, '--rexnative_trace_play_loops=2',
-            '--rexnative_trace_play_dump=true', '--rexnative_trace_play_fps=0'] + list(extra)
+            '--rexnative_trace_play_dump=true', '--rexnative_trace_play_fps=0'] + list(extra or RAW_FLAGS)
     if job:
         job.log('$ ' + ' '.join(args))
     p = subprocess.Popen(args, cwd=run, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,

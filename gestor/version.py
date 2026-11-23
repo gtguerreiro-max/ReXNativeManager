@@ -12,6 +12,14 @@ VERSION = '1.28.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.27.10', '2026-11-23', [
+        "Tests compare the emulation, not the extras on top. The boot test's pictures, the "
+        "native vs classic comparisons and the gameplay scenes now run without DLSS 5, the "
+        "upscaler, the resolution scale, frame generation and forced anisotropic filtering, "
+        "whatever the game's settings say: with DLSS 5's look on, the native picture differed "
+        "from the classic one by the look, not by the emulation. The run with the Deck's settings "
+        "keeps them.",
+    ]),
     ('1.28.0', '2026-11-23', [
         "Rebuilds no longer open the game to test it. Rebuild, Rebuild outdated, Rebuild all on "
         "the Deck and a Rebuild asked from the Deck now only build (and resend to the Deck): the "

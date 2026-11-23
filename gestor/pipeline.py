@@ -648,6 +648,9 @@ def _timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fa
     # ela, e um jogo que escurece a imagem pela rampa (Marble Blast, Limbo) parecia sempre mais
     # claro no nativo. Uma compilação mais antiga ignora a opção.
     extra = '--rexnative_capture_xenos=false --rexnative_capture_shown=true'
+    if not flags:  # the picture the game draws, without DLSS 5 and the like (scenes.RAW_FLAGS)
+        from . import scenes
+        extra += ' ' + ' '.join(scenes.RAW_FLAGS)
     if mode == 'classic':
         extra += ' --rexnative_classic=true'
     if flags:
