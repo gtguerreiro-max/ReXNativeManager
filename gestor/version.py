@@ -8,11 +8,11 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.28.0'
+VERSION = '1.28.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
-    ('1.27.10', '2026-11-23', [
+    ('1.28.1', '2026-11-23', [
         "Tests compare the emulation, not the extras on top. The boot test's pictures, the "
         "native vs classic comparisons and the gameplay scenes now run without DLSS 5, the "
         "upscaler, the resolution scale, frame generation and forced anisotropic filtering, "
