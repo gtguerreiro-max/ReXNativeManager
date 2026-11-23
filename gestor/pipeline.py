@@ -1517,8 +1517,10 @@ def _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg):
             job.result['auto_report'] = rid
         state.update('games', key, {'pipeline': {'job': job.id, 'status': 'ok', 'at': jobs.now(),
                                                  'fixes': len(fixes)}})
+        # Only after a run that opened the game: a rebuild that only builds (rebuild_tests off) does
+        # not start a session of play either.
         if auto_report and not job.result.get('batch_child') and not ctx.get('native_handover') and \
-                not ctx.get('classic_fallback'):
+                not ctx.get('classic_fallback') and 'boot' in steps:
             submit_gameplay(job, work, slug)
         return {'work': work, 'slug': slug}
     except jobs.Cancelled:

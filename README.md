@@ -114,7 +114,7 @@ From download to the Steam Deck:
    model compares them with the boot test's (and how much more of the image is black). With
    errors the game is marked "Deck: errors" and an automatic report goes to Claude, as a Deck
    problem. Tetris Splash only showed its left half with the upscaler: this made it visible on the PC.
-   Deck mode requests and the "Rebuild" of Deck games go through this test.
+   Deck mode requests go through this test (a rebuild only when `rebuild_tests` is on, below).
    **Classic renderer instead of an error**: when the native renderer does not get through the boot
    test and Claude finds no fix, the same boot test runs on ReXGlue's classic renderer (Xenia's);
    if the game runs there it starts on it from then on (`[rexnative] classic = true` in
@@ -125,8 +125,13 @@ From download to the Steam Deck:
    The app compares that with the published `main` and with the SDK installed now: each game says
    "up to date", "N missing" (the ReXNative fixes that go into the game, `renderer/` and the
    generator in `rexnative/`, with the list) or "new SDK". An older build is compared by date.
-   "Rebuild outdated" (all, or only the ones on the Deck) builds and tests each one and resends
+   "Rebuild outdated" (all, or only the ones on the Deck) builds each one and resends
    to the Deck the ones that are there; Deck mode shows "New fixes" and has "Rebuild and send".
+   **A rebuild only builds**: Rebuild, Rebuild outdated, Rebuild all on the Deck and a Rebuild
+   asked from the Deck do not open the game (no boot test, no Deck settings test, no gameplay
+   session): the game passed its tests when it was made, and a build that fails still goes to
+   Claude. A game's first build and a report's fix are still tested. `rebuild_tests` (Settings >
+   ReXNative) brings the boot test back; the Deck's own rebuilds (Without PC) follow the same rule.
 4. **Automatic fixing with Claude Code**: when a step fails, the app runs `claude -p` with the
    failure log; Claude fixes ReXNative (commit and push following the repository rules) or the
    game folder, and the app repeats the step, up to a limit of attempts. The job shows what
@@ -634,7 +639,7 @@ which mostly caught intros. When:
 - a game in a suspects batch without one: first, with the build from before the change, so the same
   batch already compares real gameplay before and after.
 
-With a gameplay scene, a rebuild or an update of the game boots for 20 s (it only checks that the
+With a gameplay scene, a tested rebuild (`rebuild_tests`) or an update of the game boots for 20 s (it only checks that the
 game starts), leaves out the 15/30/45/60 s comparison, and the test with the Deck's settings draws
 the gameplay scene with them (seconds, the very same frames on both sides) instead of a minute of
 the game. A scene that makes the game crash (or that the renderer hands to the classic one) ends at

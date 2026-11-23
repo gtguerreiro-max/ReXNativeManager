@@ -496,6 +496,15 @@ def rebuild(body: dict = Body(default={})):
     return {'jobs': _rebuild(body.get('slugs'), bool(body.get('only_deck')))}
 
 
+def _rebuild_steps(on_deck=True):
+    """Os passos de uma recompilação: só compilar (rebuild_tests desligado, o normal: o jogo já passou
+    os testes quando foi feito); com ele, o teste de arranque e, num jogo do Deck, o das definições
+    do Deck."""
+    if not config.load().get('rebuild_tests'):
+        return ['build']
+    return ['build', 'boot'] + (['deckpc'] if on_deck else [])
+
+
 def _rebuild(slugs=None, only_deck=False):
     idx = deck.index()
     out = []
@@ -510,7 +519,7 @@ def _rebuild(slugs=None, only_deck=False):
                 continue
         after = {'action': 'resend', 'steam': False, 'wait': True} if g['slug'] in idx else None
         try:
-            j = _submit_pipeline(g['title'], work=g['work'], steps=['build', 'boot'] + (['deckpc'] if after else []),
+            j = _submit_pipeline(g['title'], work=g['work'], steps=_rebuild_steps(bool(after)),
                                  after_deck=after)
         except HTTPException as e:  # já há uma tarefa para o jogo
             out.append({'slug': g['slug'], 'error': e.detail})
@@ -1515,6 +1524,8 @@ def remote_home(request: Request, refresh: bool = False, beat: bool = True, plug
     return {'mode': 'pc',  # quem responde: o PC (o serviço do próprio Deck diz 'local')
             'pc': lan.pc_name(), 'pc_free_gb': pc_free, 'gestor_appid': gid, 'version': versions.RUNNING,
             'linux_enabled': linuxbuild.cfg_ok()[0],
+            # Os rebuilds também abrem o jogo para o testar? (a página diz o que um rebuild faz)
+            'rebuild_tests': bool(config.load().get('rebuild_tests')),
             'plugin_latest': versions.plugin_latest(), 'gestor_open': bool(_session.get('open')),
             # O PC chega ao Deck por SSH? (o vigia, de 20 em 20 s): sem isso, instalar espera.
             'ssh': watcher.state.get('online'),
@@ -2305,7 +2316,7 @@ def deck_batch_job(job, mode, items):
         job.result.update(i=i, current=name)
         try:
             if mode == 'rebuild':
-                p = _submit_pipeline(name, work=w, steps=['build', 'boot', 'deckpc'])
+                p = _submit_pipeline(name, work=w, steps=_rebuild_steps())
                 orders._follow(job, p, 'build', orders.Hooks)
             sent = next(iter(manager.active(kind='deck', game=slug)), None)
             orders._follow(job, sent or _submit_update(slug, w, wait=True), 'deck', orders.Hooks)

@@ -436,6 +436,9 @@ function notifyOrders(prev, h) {
       else if (o.kind === 'deck-batch') good.push(`${otitle(o).split(':')[0]}: ${o.last || 'done'}`);
       else good.push(`${name}: ${(KIND_LABEL[o.kind] || 'done').toLowerCase()} done`);
     } else if (o.status === 'failed') bad.push(`${name}: ${o.error || 'failed'}`);
+    // The launcher, the plugin or this app updated: the version again, so the "newer launcher"
+    // banner goes (it stayed until the Manager was closed: the version came every 10 minutes).
+    if (['deck-gestor', 'deck-plugin'].includes(o.kind) && ['ok', 'failed'].includes(o.status)) setTimeout(() => loadVersion(), 500);
   }
   // Vários ao mesmo tempo: um aviso só.
   if (good.length === 1) toast(good[0]);
@@ -498,7 +501,10 @@ async function updateKit() {
     const j = await api('/api/remote/kit-update', { body: {} });
     S.seen[j.id] = j.status;
     toast('Updating the launcher on this Deck (only files: Steam does not restart)');
+    // The banner goes now; the version comes again when the request ends (notifyOrders).
+    if (S.ver && S.ver.kit) S.ver.kit.outdated = false;
     closeAll();
+    S.sig.deck = null;
     setTimeout(() => refreshHome(), 1500);
   } catch (e) { toast(e.message, true); }
 }
@@ -835,7 +841,7 @@ function confirmBatch(mode) {
   if (!gs.length) return;
   const rebuild = mode === 'rebuild';
   openLayer(`<div class="sheet confirm" style="width:860px"><h3>${rebuild ? 'Rebuild' : 'Update'} ${gs.length} game(s)?</h3>
-    <p>${rebuild ? 'Each one is built again on the PC with the latest ReXNative fixes, tested (also with the Deck settings) and sent to the Deck, one after the other: about 5 minutes per game.'
+    <p>${rebuild ? `Each one is built again on the PC with the latest ReXNative fixes, ${(S.home || {}).rebuild_tests ? 'tested (also with the Deck settings) ' : ''}and sent to the Deck, one after the other: about 5 minutes per game.`
       : 'The newer build on the PC of each one goes to the Deck, one after the other (only the files that changed).'}
       One request in Requests, and one notice at the end.</p>
     <div class="note" style="color:var(--text)">${gs.map(g => esc(g.title)).join(' · ')}</div>

@@ -128,7 +128,12 @@ space = {'interno': df(home)}
 if sd:
     space['sd'] = df(sd)
 playing_title = next((s['name'] for s in shortcuts if s['appid'] == playing_appid), None)
-print(json.dumps({'games': games, 'shortcuts': shortcuts, 'space': space, 'sd': sd, 'removed': removed,
+# O lançador do Gestor que lá está (o PC instala-o, mas o modo Sem PC do Deck também).
+try:
+    gestor_version = int(open(os.path.join(home, '.local', 'share', 'gestor-rexnative', 'VERSION')).read().strip())
+except (OSError, ValueError):
+    gestor_version = None
+print(json.dumps({'gestor_version': gestor_version, 'games': games, 'shortcuts': shortcuts, 'space': space, 'sd': sd, 'removed': removed,
                   'playing': bool(playing), 'playing_appid': playing_appid, 'playing_line': playing[:400],
                   'playing_title': playing_title, 'measured': not (playing or light or only is not None),
                   'only': only,
@@ -291,6 +296,12 @@ def status(refresh=True, only=None):
             g['size_old'] = True
     data.update(reachable=True, at=jobs.now(), error=None)
     state.update('deck', 'last', data)
+    # A versão do lançador é a que o Deck tem, não só a que o PC lá pôs: um lançador instalado pelo
+    # modo Sem PC ficava para o PC com a versão antiga, e a página do Deck pedia uma atualização
+    # que já lá estava.
+    gv, gs = data.get('gestor_version'), state.get('deck', 'gestor') or {}
+    if gv and gs and gs.get('version') != gv:
+        state.update('deck', 'gestor', {'version': gv})
     return dict(data, cached=False, foreign=cached['foreign'])
 
 

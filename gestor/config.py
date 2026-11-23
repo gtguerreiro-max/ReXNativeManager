@@ -89,6 +89,11 @@ DEFAULTS = {
     # Também com as definições do Deck (1280x800, o upscaler com FSR), no PC, comparado com o teste
     # de arranque: erros que só o Deck veria (o Tetris Splash só com a metade esquerda).
     'deck_test_enabled': True,
+    # Uma recompilação (Rebuild, Rebuild outdated, Rebuild all, um Rebuild pedido do Deck) só
+    # compila: o jogo já passou os testes quando foi feito, e uma compilação que falha continua a ir
+    # ao Claude. Ligado, volta o teste de arranque no PC (e o das definições do Deck, para os jogos
+    # que estão no Deck). A primeira compilação de um jogo testa sempre.
+    'rebuild_tests': False,
     # When the native renderer fails the boot test and Claude finds no fix: the classic renderer
     # (Xenia's) if the game runs there, set as the game's renderer, instead of an error.
     'classic_fallback': True,

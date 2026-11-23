@@ -336,11 +336,13 @@ async function rebuildOutdated() {
   const old = gamesData.filter(g => g.fresh && g.fresh.state === 'desatualizado' && !g.unsupported);
   const onDeck = old.filter(g => g.deck);
   if (!old.length) return toast('All built games are up to date');
+  let tests = false;
+  try { tests = !!(await api('/api/config')).rebuild_tests; } catch (e) { /* the text without it */ }
   const pick = await new Promise(res => {
     const d = $('#dlg');
     $('#dlgbody').innerHTML = `<h3 style="margin-top:0">Rebuild outdated games</h3>
       <p>${old.length} outdated game(s), ${onDeck.length} on the Deck: ${esc(onDeck.map(g => g.title).join(', ') || 'none')}.</p>
-      <p class="small muted">Each takes 5 to 7 minutes (with a new SDK the game code is generated again), one at a time, and is tested on the PC; the ones on the Deck are resent at the end (Steam does not close).</p>
+      <p class="small muted">Each takes about 5 minutes (with a new SDK the game code is generated again), one at a time, ${tests ? 'and is tested on the PC' : 'and is only built: no boot test (Settings, ReXNative turns it on)'}; the ones on the Deck are resent at the end (Steam does not close).</p>
       <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="b" id="rb0">Cancel</button>
         ${onDeck.length ? `<button class="b p" id="rb1">Deck ones only (${onDeck.length})</button>` : ''}<button class="b" id="rb2">All (${old.length})</button></div>`;
     d.showModal();
@@ -1568,6 +1570,7 @@ const SETTINGS = [
     ['prepare_args', 'Prepare options', 'args'],
     ['boot_seconds', 'Boot test: seconds', 'int'], ['boot_seconds_max', 'Boot test: maximum without stats', 'int'],
     ['boot_min_frames', 'Boot test: minimum frames', 'int'],
+    ['rebuild_tests', 'Rebuilds also open the game to test it (the boot test, and the Deck settings test for games on the Deck)', 'bool'],
     ['compare_enabled', 'Compare native with classic after the test', 'bool'],
     ['compare_route', 'Buttons in both runs (sec:buttons, to get past the title screen)'],
     ['compare_auto_report', 'If native has errors, ask Claude (strong model) to investigate', 'bool'],

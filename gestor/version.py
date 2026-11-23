@@ -8,10 +8,22 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.27.9'
+VERSION = '1.28.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.28.0', '2026-11-23', [
+        "Rebuilds no longer open the game to test it. Rebuild, Rebuild outdated, Rebuild all on "
+        "the Deck and a Rebuild asked from the Deck now only build (and resend to the Deck): the "
+        "game passed its tests when it was made, and a build that fails still goes to Claude. No "
+        "gameplay session starts after a rebuild either. A game's first build is still tested, "
+        "and so is a report's fix. Settings > ReXNative > \"Rebuilds also open the game to test "
+        "it\" brings the boot test back. Without PC, the Deck's own rebuilds work the same way.",
+        "Deck: after \"Update\" on the \"newer launcher\" banner, the banner now goes away. It "
+        "stayed until the Manager was closed (the page read the versions every 10 minutes). The "
+        "PC also reads the launcher's version from the Deck itself, so a launcher installed "
+        "without the PC no longer shows as old.",
+    ]),
     ('1.27.9', '2026-11-23', [
         "Routes reach the game every time. The buttons a route presses (START, A...), the "
         "renderer switch of the comparisons and a scene's trace go to the game through a file it "
