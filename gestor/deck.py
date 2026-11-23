@@ -80,6 +80,16 @@ for where, root in roots:
         skip = playing or light or (only is not None and n not in only)
         saves_size = (None if skip else sum(int((run(['du', '-sb', os.path.join(ud, s)]).split() or ['0'])[0]) for s in saves)) if saves else 0
         logs = sorted(glob.glob(os.path.join(d, 'logs', '*.log')), key=os.path.getmtime)
+        # A última vez acabou num crash? (o SDK escreve o seu crash report no fim do registo)
+        crash_at = None
+        if logs:
+            try:
+                with open(logs[-1], 'rb') as f:
+                    f.seek(max(0, os.path.getsize(logs[-1]) - 131072))
+                    if b'==== end of crash report' in f.read():
+                        crash_at = os.path.getmtime(logs[-1])
+            except OSError:
+                pass
         # As conquistas que o SDK grava quando o jogo as dá: userdata/achievements/<TitleID>.toml.
         ach, cur = {}, None
         for p in glob.glob(os.path.join(ud, 'achievements', '*.toml')):
@@ -105,7 +115,7 @@ for where, root in roots:
                     snaps.append({'name': sn, 'mtime': os.path.getmtime(sp),
                                   'png': sum(f.endswith('.png') for f in fs),
                                   'trace': sum(f.endswith('.rxt') for f in fs)})
-        games.append({'achievements': ach, 'snapshots': snaps,'slug': n, 'where': where, 'path': d, 'size': du(d),
+        games.append({'achievements': ach, 'snapshots': snaps, 'crash_at': crash_at, 'slug': n, 'where': where, 'path': d, 'size': du(d),
                       'exe': exes[0] if exes else None, 'saves': saves, 'saves_size': saves_size,
                       'mtime': max([os.path.getmtime(os.path.join(d, e)) for e in exes] or [0]),
                       'complete': 'play.sh' in files, 'removed_mark': n in marks,
@@ -1054,13 +1064,16 @@ def evidence(job, dk, g, dest):
     # Uma ligação: a lista dos ficheiros (os 2 registos mais recentes, as definições, as capturas do
     # Steam das últimas 24 h) vai para um tar, que chega pelo stdout.
     script = '{ cd %s && ls -t logs/*.log 2>/dev/null | head -2 | sed "s|^|$PWD/|"; ' % q(g['path'])
+    # The newest log that ends in a crash report too, when it is older than those two.
+    script += ('c=$(grep -l "==== end of crash report" $(ls -t logs/*.log 2>/dev/null | head -10) '
+               '2>/dev/null | head -1); [ -n "$c" ] && echo "$PWD/$c"; ')
     if name:
         script += '[ -f %s ] && echo "$PWD/%s"; ' % (q(name + '.toml'), name + '.toml')
     if sc.get('appid'):
         script += ('find ~/.local/share/Steam/userdata/*/760/remote/%d/screenshots -maxdepth 1 -name "*.jpg" '
                    '-mmin -1440 -printf "%%T@ %%p\\n" 2>/dev/null | sort -rn | head -3 | cut -d" " -f2-; '
                    % int(sc['appid']))
-    script += '} | tar -cf - -P -T - 2>/dev/null'
+    script += '} | sort -u | tar -cf - -P -T - 2>/dev/null'
     r = subprocess.run(dk.d.ssh_cmd(script), capture_output=True, timeout=180,
                        creationflags=jobs.CREATE_NO_WINDOW)
     try:

@@ -1583,9 +1583,16 @@ def _report_job(job, work, report_id):
         state.update('reports', report_id, {'status': 'failed'})
         raise RuntimeError(fx['summary'])
     if fx['commits'] or fx['edited']:
+        # A crash read from its log: built and started once, to check it still starts (the picture
+        # was not the question: no scenes, no comparison).
+        if rep.get('crash_only'):
+            after = ['build', 'boot']
+        elif config.load().get('compare_enabled', True):
+            after = ['build', 'boot', 'scenes', 'compare']
+        else:
+            after = ['build', 'boot', 'scenes']
         try:
-            run(job, work=work, steps=['build', 'boot', 'scenes', 'compare'] if config.load().get('compare_enabled', True)
-                else ['build', 'boot', 'scenes'], auto_report=False, fallback=False)
+            run(job, work=work, steps=after, auto_report=False, fallback=False)
         except jobs.Cancelled:
             state.update('reports', report_id, {'status': 'cancelled'})
             raise

@@ -147,6 +147,10 @@ From download to the Steam Deck:
    (PC, Deck), what you see and the captures that show it; Claude (the strong model) investigates
    with the game running, fixes, builds, and the game is tested again. Until there is a fix, a
    button puts the game on the classic renderer (PC or Deck).
+   **Only read the crash log** (PC and Deck): Claude fixes a crash from the log alone (the SDK's
+   crash report at the end of the game's log: an unregistered guest function, a caught fault, the
+   backtrace), without starting the game; the fixed game is then built and started once. On the
+   Deck it comes ticked when the last run of the game ended in a crash.
    **Snapshots**: at the place, in the game, the settings menu (View + Menu on the Deck, Back +
    Start or F1 on the PC) and then Y saves that moment in the game's `snapshots\` folder: the frame
    as shown and a frame trace of the next frames (ReXNative's renderer). A report sends the newest
@@ -265,7 +269,10 @@ under the top bar shows the request the PC is working on, its stage and its prog
   `backups/pc`; the Deck's save is not changed). Claude investigates on the PC
   knowing it is a Deck problem (reproducing with the Deck settings); if it fixes it, the game is
   built, tested and resent to the Deck. The report shows up in Requests (Collect on Deck, Claude
-  investigates, Send the fix) with what Claude found.
+  investigates, Send the fix) with what Claude found. **Only read the crash log** (ticked when the
+  game's last run ended in a crash report) sends the logs and nothing else: no capture, no save,
+  no game started to look; Claude fixes from the crash report, and the fix is built and started
+  once before it goes to the Deck. Without PC, the Deck's own Claude does the same.
 - **The assistant's conversation**: open a request in Requests to follow what the assistant says
   and does (Claude or the one chosen in Settings), live; while Claude works, **X** writes to it
   with the on-screen keyboard (a hint, what you saw, where to look) and the message reaches it in

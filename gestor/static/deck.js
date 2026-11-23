@@ -1506,11 +1506,16 @@ const RSECS = [20, 40, 60, 90];
 function openReport(slug) {
   const g = deckGame(slug) || { title: slug };
   const st = { text: '', secs: 1 };
+  // The last time it was played it ended in a crash: reading only that log is offered first.
+  const crashed = !!g.crash_at;
   const l = openLayer(`<div class="sheet confirm" style="width:980px"><h3>Report a problem: ${esc(g.title)}</h3>
+    <button class="check f${crashed ? ' on' : ''}" id="rcrash" data-hint="Change" onclick="reportCrash()"><span class="box">✓</span>Only read the crash log: nothing opens, on the Deck or on ${side()}. Claude fixes it from the log of the crash; the fixed game is then built and started once on ${side()} to check it${crashed ? ` (the last time you played, ${ago(g.crash_at)}, it ended in a crash)` : ''}</button>
+    <div style="height:10px"></div>
     <p>What do you see on the Deck? (choose one or more) Claude investigates on ${side()} with what the Deck knows about the game: the log, the settings and the Steam screenshots (Steam + R1).</p>
     <div class="tools" style="margin:0 0 12px">${RCHIPS.map(([k, t]) => `<button class="pill f" data-chip="${k}" data-hint="Choose" onclick="this.classList.toggle('on')">${esc(t)}</button>`).join('')}</div>
     <button class="check f" id="rtext" data-hint="Type" onclick="reportText()"><span class="box">✎</span><span id="rtextv">Write more (on-screen keyboard)</span></button>
     <div style="height:10px"></div>
+    <div id="rmore" style="${crashed ? 'display:none' : ''}">
     ${g.snapshots ? `<button class="check f on" id="rsnap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Send the snapshot${g.snapshots > 1 ? 's' : ''} you took in the game (${g.snapshots}, newest ${ago(g.snapshot_at)}): Claude sees that moment and replays its frames on ${side()}</button>
     <div style="height:10px"></div>` : `<p class="note" style="margin:0 0 10px">Tip: at the place, in the game, press View + Menu and then Y. That moment is saved as a snapshot, and the next report sends it: Claude sees what you saw and replays those frames on ${side()}.</p>`}
     <button class="check f${g.snapshots ? '' : ' on'}" id="rcap" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Take a screenshot on the Deck: the game opens, is captured and closes on its own</button>
@@ -1518,9 +1523,16 @@ function openReport(slug) {
     <button class="opt f" id="rsecs" data-hint="Change" onclick="reportSecs(1)"><span class="l">Screenshot at</span><span class="arr">◀</span><span class="v">${RSECS[st.secs]} s</span><span class="arr">▶</span></button>
     <div style="height:10px"></div>
     <button class="check f on" id="rsave" data-hint="Change" onclick="this.classList.toggle('on')"><span class="box">✓</span>Send my save: Claude plays from your progress, to reach a menu or level a new game does not have (your save on the Deck stays as it is)</button>
+    </div>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
-      <button class="btn p f" data-hint="Send" onclick="sendReport('${esc(slug)}')">Send to Claude</button></div></div>`, { focus: '.pill' });
+      <button class="btn p f" data-hint="Send" onclick="sendReport('${esc(slug)}')">Send to Claude</button></div></div>`, { focus: crashed ? '#rcrash' : '.pill' });
   l.report = st;
+}
+// Only the crash log: the capture, the save and the snapshots go (nothing opens).
+function reportCrash() {
+  const l = S.layers[S.layers.length - 1];
+  const on = $('#rcrash', l.el).classList.toggle('on');
+  $('#rmore', l.el).style.display = on ? 'none' : '';
 }
 function reportSecs(d) {
   const l = S.layers[S.layers.length - 1];
@@ -1539,14 +1551,16 @@ function reportText() {
 async function sendReport(slug) {
   const l = S.layers[S.layers.length - 1];
   const chips = $$('.pill.on', l.el).map(b => b.dataset.chip);
-  if (!chips.length && !l.report.text) { toast('Choose what you see or write a description', true); return; }
-  const capture = $('#rcap', l.el).classList.contains('on');
-  const saves = $('#rsave', l.el).classList.contains('on');
-  const snapshots = !!$('#rsnap', l.el) && $('#rsnap', l.el).classList.contains('on');
+  const crash = $('#rcrash', l.el).classList.contains('on');
+  if (!crash && !chips.length && !l.report.text) { toast('Choose what you see or write a description', true); return; }
+  const capture = !crash && $('#rcap', l.el).classList.contains('on');
+  const saves = !crash && $('#rsave', l.el).classList.contains('on');
+  const snapshots = !crash && !!$('#rsnap', l.el) && $('#rsnap', l.el).classList.contains('on');
   try {
-    const j = await api('/api/remote/report/' + encodeURIComponent(slug), { body: { chips, text: l.report.text, capture, saves, snapshots, seconds: RSECS[l.report.secs] } });
+    const j = await api('/api/remote/report/' + encodeURIComponent(slug), { body: { chips, text: l.report.text, capture, saves, snapshots, seconds: RSECS[l.report.secs], crash_only: crash } });
     S.seen[j.id] = j.status;
-    toast(capture ? 'Report sent: the game will open on the Deck for the screenshot and close on its own' : 'Report sent to Claude: follow it in Requests');
+    toast(crash ? 'Report sent: Claude reads the crash log, nothing opens. Follow it in Requests'
+      : capture ? 'Report sent: the game will open on the Deck for the screenshot and close on its own' : 'Report sent to Claude: follow it in Requests');
     closeAll();
     setTimeout(() => refreshHome(), 1500);
   } catch (e) { toast(e.message, true); }

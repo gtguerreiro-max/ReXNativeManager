@@ -846,15 +846,23 @@ def game_report(slug: str, body: dict = Body(...)):
     """Guarda o relatório e, se pedido, o Claude (modelo forte) investiga-o e corrige o que puder."""
     w = _work(slug)
     text = (body.get('text') or '').strip()
+    # Only the crash log: Claude reads this PC's newest log of a crash and fixes from it, without
+    # starting the game.
+    crash = bool(body.get('crash_only'))
+    if crash and not text:
+        text = 'The game crashed'
     if not text:
         raise HTTPException(400, 'describe the problem')
     allowed = set(covers.captures(w))
-    caps = [c for c in body.get('captures') or [] if c in allowed]
+    caps = [c for c in body.get('captures') or [] if c in allowed] if not crash else []
     rid = '%s-%s' % (slug, jobs.now().replace(':', '').replace('-', ''))
     rep = {'work': state.game_key(w), 'slug': slug, 'at': jobs.now(),
-           'kind': body.get('kind') or 'Other', 'where': body.get('where') or 'PC',
-           'text': text, 'captures': caps,
-           'status': 'queued' if body.get('fix', True) else 'saved'}
+           'kind': 'Crash (from its log)' if crash else body.get('kind') or 'Other',
+           'where': 'PC' if crash else body.get('where') or 'PC',
+           'text': text, 'captures': caps, 'crash_only': crash,
+           'status': 'queued' if body.get('fix', True) or crash else 'saved'}
+    if crash:
+        body = dict(body, fix=True, snapshots=[])
     if isinstance(body.get('snapshots'), list):  # the PC snapshots left ticked in the dialog
         rep['pc_snapshots'] = [os.path.basename(str(n)) for n in body['snapshots']]
     state.update('reports', rid, rep)
@@ -1468,7 +1476,9 @@ def _deck_view(d):
             'job': act[0].id if act else None, 'gestor': bool(sc and sc.get('appid') == gid),
             'achievements': achievements.summary(loc['work'], g['slug']) if loc.get('work') else None,
             'snapshots': len(deck.recent_snapshots(g)),
-            'snapshot_at': max([s.get('mtime') or 0 for s in g.get('snapshots') or []] or [0]) or None})
+            'snapshot_at': max([s.get('mtime') or 0 for s in g.get('snapshots') or []] or [0]) or None,
+            # The last time it was played it ended in a crash (the report offers to read only its log).
+            'crash_at': g.get('crash_at')})
     return out
 
 
@@ -2228,10 +2238,17 @@ def remote_report(slug: str, body: dict = Body(...)):
     w = _work(slug)
     chips = [c for c in body.get('chips') or [] if c in REPORT_CHIPS]
     text = (body.get('text') or '').strip()[:2000]
+    # Only the crash log: Claude reads the Deck's log of the crash and fixes from it; nothing opens
+    # (no capture, no save or snapshot to replay, no game started on the PC to look).
+    crash = bool(body.get('crash_only'))
+    if crash:
+        chips = sorted(set(chips) | {'fecha'})
+        body = dict(body, capture=False, saves=False, snapshots=False)
     if not chips and not text:
         raise HTTPException(400, 'pick what you see or write a description')
     what = '; '.join([REPORT_CHIPS[c] for c in chips] + ([text] if text else []))
-    kind = next((REPORT_KIND[c] for c in chips if c in REPORT_KIND), 'Graphics on the native renderer')
+    kind = 'Crash (from its log)' if crash else next((REPORT_KIND[c] for c in chips if c in REPORT_KIND),
+                                                      'Graphics on the native renderer')
     for j in manager.active(kind='deck-report', game=slug):
         raise HTTPException(409, 'a report for this game is already running')
     renderer = (games.info(w).get('classic') or {}).get('deck')
@@ -2239,13 +2256,13 @@ def remote_report(slug: str, body: dict = Body(...)):
     state.update('reports', rid, {
         'work': state.game_key(w), 'slug': slug, 'at': jobs.now(), 'kind': kind, 'where': 'Steam Deck',
         'text': what + ('. (On the Deck this game starts on the classic renderer.)' if renderer else ''),
-        'captures': [], 'status': 'queued', 'from': 'deck'})
+        'captures': [], 'status': 'queued', 'from': 'deck', 'crash_only': crash})
     j = manager.submit('deck-report', 'Report: %s' % games.info(w)['title'],
                        lambda job: deck_report_job(job, w, slug, body, rid), lane='orders', game=slug,
                        params={'report': rid, 'chips': chips, 'capture': bool(body.get('capture')),
                                'saves': bool(body.get('saves', True)),
                                'snapshots': bool(body.get('snapshots', True)),
-                               'seconds': body.get('seconds')})
+                               'seconds': body.get('seconds'), 'crash_only': crash})
     return _job(j)
 
 

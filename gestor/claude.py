@@ -7,6 +7,7 @@ ferramenta que o Claude usa aparecem na tarefa enquanto ele trabalha.
 
 O Claude Code corre com a sessão da linha de comandos (`claude auth login`, uma vez) ou com
 CLAUDE_CODE_OAUTH_TOKEN (`claude setup-token`)."""
+import glob
 import json
 import re
 import os
@@ -328,6 +329,82 @@ leave the line out if none>
 {rules}"""
 
 
+CRASH_PROMPT = """An Xbox 360 game recompiled with ReXGlue and drawn by ReXNative crashed for the user, who
+asks for a fix from the crash log ALONE. Do not start the game: no live.ps1, no traces, no
+RenderDoc, no runs of your own (the user does not want the game opened for this; the app builds
+it after you and checks once that it still starts). Read the log, find the cause in the code, fix
+it, and say what you did.
+
+Game: {title} (folder name {slug})
+Game work folder: {work} (hints.txt, not-starts.txt, the manifest {name}_manifest.toml with each
+module's [modules.functions], layer/, src/; generated\\ = ReXGlue's code, hundreds of MB)
+Built game: {run}\\{name}.exe; its settings on the PC: {run}\\{name}.toml; the Deck's overrides:
+{work}\\deck.toml
+ReXNative worktree (your working directory; detached HEAD of github.com/{rexnative_repo}; this app's own copy, no other session works in it): {rexnative_dir}
+
+The user's report:
+- Where: {where}
+- What they say: {text}
+{logs}
+1. Read the crash report: the lines from `==== <name> crash report` to `==== end of crash
+   report ====`, and the `C` (critical) lines just before it: what stopped the game (a call to an
+   unregistered guest function, a caught fault with its address and code offset, a failed
+   assertion), the guest thread, the backtrace (module + offset). The lines before those say what
+   the game was doing (loading, a menu, a race, a cutscene).
+2. Sort it:
+   - "Call to invalid or unregistered function at guest address 0x...", "No function registered
+     at ...": a function start codegen did not discover (reached through a pointer: a callback,
+     a table, a thread entry). Which module holds the address (the game's .xex or one of its
+     DLLs: the log lists each module as it registers its functions). rexnative/functions.py and
+     rexnative/project.py say how a work folder gets a function start (hints.txt for the .xex,
+     `0xADDRESS 0xSIZE`, 0 = codegen finds the end; a DLL module through its own entry in the
+     manifest), so that codegen keeps it; then codegen and the build run again
+     (`python -m rexnative project "{work}" --build`). Not --discover or --find-functions: they
+     start the game.
+   - A fault in ReXNative's or the SDK's code (rexgpu, rexnative, a backtrace through them): the
+     code at that offset; docs/DEBUGGING.md, docs/GAMES.md (similar crashes already fixed).
+   - Anything else: reason from the log and the code; docs/NOTES.md is long (list its headings
+     first, `Select-String '^#' docs\\NOTES.md`). Search generated\\ only for one function or
+     address, never blindly.
+3. Fix it where it belongs: a general fix in ReXNative when other games can hit it (gated when it
+   could change them), this game's own files otherwise. Then ONE build:
+   `python -m rexnative project "{work}" --build` must succeed. Commit ReXNative changes
+   (identity and trailer in the rules).{push}
+4. Start the summary with "NO FIX:" only when the log does not hold enough to fix it, saying what
+   is missing (then a normal report, which may start the game, or a snapshot at the place).
+
+End with a SHORT summary in English for the user: the cause, what you changed (files, commits),
+and where in the game to check it.
+Finish the summary with these lines, exactly in this form:
+REXNATIVE: <one short sentence: what this changed in ReXNative for every game, or "nothing">
+COMMITS: <the short hashes of the ReXNative commits YOU made (after the push), space-separated, or "none">
+SUSPECTS: <only if you committed ReXNative changes: up to 6 folder names of OTHER prepared games
+(in {work_roots}) that go through the code you changed,
+judged from their logs (run\\logs\\*.log, run\\logs\\live\\*.log) and layers, space-separated; or "none">
+
+{rules}"""
+
+
+def _ends_in_crash(path):
+    try:
+        with open(path, 'rb') as f:
+            f.seek(max(0, os.path.getsize(path) - 131072))
+            return b'==== end of crash report' in f.read()
+    except OSError:
+        return False
+
+
+def crash_logs(work, report):
+    """The logs a crash-only report reads: the Deck's (deck-*.log, fetched with the report), and
+    this PC's newest log of the game that ends in a crash report only when none of the Deck's does
+    (an older crash on the PC, from another build, would mislead)."""
+    out = [f for f in report.get('deck_files') or [] if f.lower().endswith('.log')]
+    if any(_ends_in_crash(f) for f in out):
+        return out
+    pc = sorted(glob.glob(os.path.join(work, 'run', 'logs', '*.log')), key=os.path.getmtime, reverse=True)
+    return out + next(([p] for p in pc[:10] if _ends_in_crash(p)), [])
+
+
 FIRST_SNAPSHOT = """1. Start from the player's snapshot (above): no game to reach. Look at its picture, then
    `live.ps1 play "<its trace>" -Dir "{run}" -Exe {name}.exe -Extra "--rexnative_trace_play_loops=2 --rexnative_trace_play_dump=true --rexnative_trace_play_fps=0"`
    draws its frames with the PC's build and exits in about 20 s (the images:
@@ -540,6 +617,19 @@ def investigate(job, work, report):
         boot_txt += 'Last try on the Steam Deck: log %s (captures in %s)\n' % (
             deck_log, os.path.join(work, 'deck'))
     limit = int(float(cfg.get('claude_timeout_min') or 120))
+    if report.get('crash_only'):
+        logs = crash_logs(work, report)
+        logs_txt = ("The logs (the Deck's are deck-*.log; the crash report is at the end of the one "
+                    'that crashed):\n' + ''.join('  %s\n' % f for f in logs)) if logs else (
+                    'No log with a crash report was found (on the Deck or on this PC): say so with NO FIX.\n')
+        prompt = CRASH_PROMPT.format(
+            title=g['title'], slug=g['slug'], work=work, run=os.path.join(work, 'run'), name=name,
+            rexnative_dir=rex, rexnative_repo=cfg.get('rexnative_repo'), where=report.get('where', '-'),
+            text=report.get('text', '').strip() or '-', logs=logs_txt, push=push_text(cfg),
+            rules=rules_text(cfg), work_roots=work_roots_text(cfg))
+        return run(job, prompt, cwd=rex, work=work, tag='report',
+                   intro='Claude reads the crash log (%s): the game does not open' % report.get('where'),
+                   extra_dirs=sorted({os.path.dirname(f) for f in logs}))
     run_dir = os.path.join(work, 'run')
     with_trace = any(sn['trace'] for sn in snaps)
     prompt = REPORT_PROMPT.format(
