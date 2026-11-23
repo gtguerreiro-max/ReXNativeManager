@@ -2168,6 +2168,23 @@ def deck_report_job(job, w, slug, body, rid):
         ok, err = True, ''
     except RuntimeError as e:
         data, ok, err = None, False, str(e)
+    if not ok and body.get('crash_only'):
+        # The crash log is on the Deck, and the PC's own logs are of other builds: without it Claude
+        # chased an older PC crash. The Deck went to sleep after the report: wait for it, as a
+        # transfer does.
+        hours = float(config.load().get('deck_wait_hours') or 12)
+        job.event('info', 'The Deck is asleep or offline: the report waits for it, to read the crash log '
+                          '(up to %g h)' % hours)
+        until = time.time() + hours * 3600
+        job.drain_stop = True  # only waiting: a restart of the app does not wait for this
+        while not ok and time.time() < until:
+            job.sleep(60)
+            ok, err, _ = dk.check()
+        job.drain_stop = False
+        if not ok:
+            raise RuntimeError('The Deck did not come back in %g h: its crash log could not be read (%s)'
+                               % (hours, err))
+        data = dk.listing(light=True, tries=3)
     if ok:
         b = deck.busy_from(data.get('playing_line'))
         g = next((x for x in data['games'] if x['slug'] == slug), None)

@@ -8,10 +8,15 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.29.2'
+VERSION = '1.29.3'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.29.3', '2026-11-23', [
+        "Deck: a \"Just the crash log\" report waits for the Deck when it went to sleep after the "
+        "report, and reads the crash log then. It went on without it, and Claude looked at an "
+        "older crash from the PC's logs instead.",
+    ]),
     ('1.29.2', '2026-11-23', [
         "Claude investigates the game stock first. When it looks into a problem, finds gameplay "
         "or checks a fix, it starts and replays the game with -Stock: without DLSS 5 and its "
