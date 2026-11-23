@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.27.7'
+VERSION = '1.27.8'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.27.8', '2026-11-23', [
+        "Deck: after a mode change, the Manager stays in front. For the second between its old "
+        "window closing and the new one opening, Steam put its own screen in front, and "
+        "sometimes kept it there (a game's library page), with the Manager open behind it. "
+        "Deck launcher v5 shows a dark window of the Manager over that second, so Steam "
+        "keeps the Manager in front. The Manager asks you to update the launcher.",
+    ]),
     ('1.27.7', '2026-11-23', [
         "Deck: changing the mode in Settings no longer takes the Manager down. Moving between "
         "the PC's Manager and the Deck's own (PC or Automatic from Without PC, or Without PC from "
