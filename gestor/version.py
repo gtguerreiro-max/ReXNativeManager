@@ -8,10 +8,22 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.27.5'
+VERSION = '1.27.6'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.27.6', '2026-11-23', [
+        "Native vs classic: when the captures are the same pixels, the game is marked the same "
+        "without asking the model. The model had called identical Marble Blast Ultra captures "
+        "brighter. Otherwise the model now gets each pair's measured brightness, and calls the "
+        "brightness different only past 0.02.",
+        "Test scenes: a replay that leaves pictures empty now fails only that scene, with the "
+        "reason, instead of the whole test (Limbo did). ReXNative 2ab2a9b writes every picture "
+        "before a replay ends; rebuild a game to get it.",
+        "Prepares on the PC are faster: the ReXGlue codegen now writes on every core "
+        "(Iron Brigade 40.0 to 28.3 s per codegen run, the same files). This changes the SDK, so "
+        "games show as built before it.",
+    ]),
     ('1.27.5', '2026-11-23', [
         "Native vs classic comparisons no longer call the native picture brighter in games that "
         "darken it through the console's gamma ramp (Marble Blast Ultra, Limbo, Halo CEA, Castle "

@@ -810,6 +810,24 @@ unless the game moved on in that second and a half (a cut, a fade, a menu that o
 as the same screen."""
 
 
+# A pair whose mean difference (_pair_diff, 0-100) is at most this is the same picture.
+SAME_DIFF = 1.0
+
+MEASURED_NOTE = """
+
+MEASURED on the full pictures (mean luminance 0-1, both with the game's gamma ramp as the screen
+shows it). Within the same screen, call the brightness different ("brilho_diferente") only where
+the two luminances differ by more than 0.02; closer than that, the brightness is the same:
+"""
+
+
+def _luma(path):
+    """Mean luminance (Rec. 709 weights, 0-1) of a picture, on a small copy."""
+    from PIL import Image, ImageStat
+    m = ImageStat.Stat(Image.open(path).convert('RGB').resize((160, 90))).mean
+    return round((0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]) / 255.0, 3)
+
+
 def _pair_diff(a, b):
     """Diferença média (0-100) entre as duas imagens reduzidas: só uma pista."""
     from PIL import Image, ImageChops, ImageStat
@@ -875,12 +893,18 @@ def step_compare(job, ctx, attempt):
         res = timed_run(job, ctx['slug'], run, name, 'classic')
         classics = {c['t']: c['path'] for c in res.get('captures') or []}
     pairs = [{'t': t, 'native': natives[t], 'classic': classics[t],
-              'diff': _pair_diff(natives[t], classics[t])} for t in sorted(natives) if t in classics]
+              'diff': _pair_diff(natives[t], classics[t]),
+              'luma': [_luma(natives[t]), _luma(classics[t])]} for t in sorted(natives) if t in classics]
     out = {'at': jobs.now(), 'pairs': pairs, 'classic_running': res.get('running'),
-           'classic_frames': res.get('frames'), 'one_run': one_run}
+           'classic_frames': res.get('frames'), 'one_run': one_run, 'shown': True}
     if not pairs:
         out.update(verdict='inconclusivo', summary='The classic renderer gave no captures (%s).' % (
             'it closed' if not res.get('running') else 'no frames'))
+    elif max(p['diff'] for p in pairs) <= SAME_DIFF:
+        # The same pictures: the model once called identical captures "brighter" (Marble Blast
+        # Ultra, 2026-11-23), so it is not asked.
+        out.update(verdict='iguais', summary='The native and classic pictures are the same (largest '
+                   'difference %.1f%%): no model needed.' % max(p['diff'] for p in pairs))
     else:
         sheet = os.path.join(compare_dir(ctx['slug']), 'comparacao.jpg')
         _compare_sheet(pairs, sheet)
@@ -892,6 +916,9 @@ def step_compare(job, ctx, attempt):
                 route=cfg.get('compare_route') or 'none')
             if one_run:
                 prompt += ONE_RUN_NOTE
+            prompt += MEASURED_NOTE + chr(10).join(
+                '- %d s: native %.3f, reference %.3f, mean pixel difference %.1f%%' % (
+                    p['t'], p['luma'][0], p['luma'][1], p['diff']) for p in pairs)
             answer, cost = claude.ask(prompt, COMPARE_SCHEMA, cwd=compare_dir(ctx['slug']))
             notes = {int(x.get('t', -1)): x for x in answer.get('pairs') or []}
             for pr in pairs:

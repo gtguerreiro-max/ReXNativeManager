@@ -102,6 +102,32 @@ def refs(slug, sid):
     return _pngs(os.path.join(scene_dir(slug, sid), 'ref'))
 
 
+def _settled_pngs(job, d, wait=5.0):
+    """The replay's pictures once written: the renderer writes them on threads of its own, and a
+    build older than ReXNative's FinishShots exits 2.5 s after the last loop, which on a busy PC
+    left some empty (Limbo, 2026-11-23: 0-byte f3-f5-native.png failed the whole pipeline).
+    Waits until none is empty and the sizes stop changing (up to `wait` s). An empty one is a
+    SceneError (the scene fails, the test goes on): the pictures pair with the references by
+    their order, so one left out would compare the wrong frames."""
+    last, end = None, time.time() + wait
+    while True:
+        sizes = {}
+        for x in _pngs(d):
+            try:
+                sizes[x] = os.path.getsize(x)
+            except OSError:
+                sizes[x] = 0
+        if (sizes == last and all(sizes.values())) or time.time() > end:
+            break
+        last = sizes
+        time.sleep(0.5)
+    empty = [os.path.basename(x) for x, n in sizes.items() if not n]
+    if empty:
+        raise SceneError('the replay left %d picture(s) empty (%s): rebuild the game, its build '
+                         'exits before they are written' % (len(empty), ', '.join(empty)))
+    return _pngs(d)
+
+
 def _pngs(d):
     def idx(p):
         m = re.search(r'f(\d+)', os.path.basename(p))
@@ -219,7 +245,7 @@ def play(job, work, trace, out_dir, extra=()):
     if crash:
         _drop_logs(run, log_tag)
         raise SceneError('the game crashed while drawing the scene: %s' % crash, crashed=True)
-    imgs = _pngs(out_dir)
+    imgs = _settled_pngs(job, out_dir)
     log = _log_text(run, log_tag)
     _drop_logs(run, log_tag)
     if not imgs:
