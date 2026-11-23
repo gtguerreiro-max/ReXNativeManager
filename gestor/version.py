@@ -8,10 +8,16 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.29.3'
+VERSION = '1.29.4'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.29.4', '2026-11-23', [
+        "Rebuild all on the Deck builds every game first and sends them after. It sent each game "
+        "before building the next, so a Deck that went to sleep held the whole batch on the first "
+        "send (overnight, one game of 23 was built). Now the PC builds them all, the sends wait "
+        "in the queue, and they go one after the other when the Deck is back.",
+    ]),
     ('1.29.3', '2026-11-23', [
         "Deck: a \"Just the crash log\" report waits for the Deck when it went to sleep after the "
         "report, and reads the crash log then. It went on without it, and Claude looked at an "

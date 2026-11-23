@@ -2344,33 +2344,65 @@ def deck_batch_job(job, mode, items):
     job.result.setdefault('failed', [])
     job.result['total'] = len(items)
     job.progress = _batch_progress(job)
+    # Rebuild: every game is built first, and its send queued (the deck lane sends them one at a
+    # time); the sends are followed at the end. A send waits for a Deck that went to sleep, and
+    # following each before the next build held the whole batch on the first send (a night with
+    # the Deck asleep built one game of 23). pending: {slug: [send job, name]}.
+    pending = job.result.setdefault('pending', {})
+
+    def failed_game(slug, name, why):
+        seen.append(slug)
+        job.result['failed'].append(name)
+        job.event('fail', '%s: %s' % (name, why))
+
     for i, (slug, w, name) in enumerate(items):
-        if slug in seen:
+        if slug in seen or slug in pending:
             continue
         job.check()
         job.result.update(i=i, current=name)
         try:
-            if mode == 'rebuild':
-                p = _submit_pipeline(name, work=w, steps=_rebuild_steps())
-                orders._follow(job, p, 'build', orders.Hooks)
             sent = next(iter(manager.active(kind='deck', game=slug)), None)
+            if mode == 'rebuild':
+                # A send already queued for the game is this batch's, from before a restart of the
+                # app (a new batch leaves out the games with a job): built already.
+                if sent is None:
+                    p = _submit_pipeline(name, work=w, steps=_rebuild_steps())
+                    orders._follow(job, p, 'build', orders.Hooks)
+                    sent = _submit_update(slug, w, wait=True)
+                pending[slug] = [sent.id, name]
+                job.event('ok', '%s: rebuilt, its send queued (%d of %d)' % (name, i + 1, len(items)))
+                continue
             orders._follow(job, sent or _submit_update(slug, w, wait=True), 'deck', orders.Hooks)
             seen.append(slug)
             job.result['ok'].append(name)
-            job.event('ok', '%s: %s (%d of %d)' % (name, 'rebuilt and sent' if mode == 'rebuild' else 'updated',
-                                                   i + 1, len(items)))
-        except jobs.Cancelled:
-            raise
-        except jobs.Requeue:
+            job.event('ok', '%s: updated (%d of %d)' % (name, i + 1, len(items)))
+        except (jobs.Cancelled, jobs.Requeue):
             raise
         except HTTPException as e:
-            seen.append(slug)
-            job.result['failed'].append(name)
-            job.event('fail', '%s: %s' % (name, e.detail))
+            failed_game(slug, name, e.detail)
         except Exception as e:  # noqa: BLE001 - um jogo que falha não pára os outros
+            failed_game(slug, name, str(e)[:200])
+    if pending:
+        job.result.update(current='sending to the Deck')
+        job.event('info', '%d game(s) built: sending them to the Deck (a Deck asleep gets them when it '
+                          'wakes up)' % len(pending))
+    for slug, (jid, name) in list(pending.items()):
+        job.check()
+        job.result.update(current=name)
+        try:
+            sj = manager.get(jid) or next(iter(manager.active(kind='deck', game=slug)), None) or \
+                _submit_update(slug, games.find(slug), wait=True)
+            orders._follow(job, sj, 'deck', orders.Hooks)
             seen.append(slug)
-            job.result['failed'].append(name)
-            job.event('fail', '%s: %s' % (name, str(e)[:200]))
+            job.result['ok'].append(name)
+            job.event('ok', '%s: sent' % name)
+        except (jobs.Cancelled, jobs.Requeue):
+            raise
+        except HTTPException as e:
+            failed_game(slug, name, e.detail)
+        except Exception as e:  # noqa: BLE001
+            failed_game(slug, name, str(e)[:200])
+        pending.pop(slug, None)
     ok, failed = job.result['ok'], job.result['failed']
     verb = 'rebuilt and sent' if mode == 'rebuild' else 'updated'
     text = '%d of %d %s' % (len(ok), len(items), verb) + (
