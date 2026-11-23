@@ -20,7 +20,7 @@ import shutil
 import subprocess
 import time
 
-from . import config, games, jobs
+from . import config, fsutil, games, jobs
 
 FRAMES = 3          # frames de cada cena (o primeiro lê alvos vazios na primeira volta: a segunda conta)
 PLAY_TIMEOUT = 240  # o arranque do jogo até ao primeiro Swap, e as duas voltas
@@ -159,8 +159,7 @@ def record_live(run, frames=FRAMES, timeout=30):
     tdir = os.path.join(run, 'live', 'trace')
     os.makedirs(tdir, exist_ok=True)
     start = time.time()
-    with open(os.path.join(run, 'live', 'control.txt'), 'a', encoding='ascii') as f:
-        f.write('set rexnative_trace_record %d\n' % frames)
+    fsutil.send_control(os.path.join(run, 'live', 'control.txt'), 'set rexnative_trace_record %d' % frames)
     found = None
     while not found and time.time() - start < timeout:
         time.sleep(0.3)

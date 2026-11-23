@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.27.8'
+VERSION = '1.27.9'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.27.9', '2026-11-23', [
+        "Routes reach the game every time. The buttons a route presses (START, A...), the "
+        "renderer switch of the comparisons and a scene's trace go to the game through a file it "
+        "reads and removes at once; written a line at a time, it could be read empty, and the "
+        "command was lost (a route stayed on the title screen). The file is now written whole. "
+        "Games rebuilt with ReXNative from now on also wait for the file to be whole.",
+    ]),
     ('1.27.8', '2026-11-23', [
         "Deck: after a mode change, the Manager stays in front. For the second between its old "
         "window closing and the new one opening, Steam put its own screen in front, and "

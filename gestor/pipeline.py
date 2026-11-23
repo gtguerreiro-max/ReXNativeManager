@@ -18,7 +18,7 @@ import subprocess
 import threading
 import time
 
-from . import catalog, claude, config, games, jobs, rexrepo, state, xna
+from . import catalog, claude, config, fsutil, games, jobs, rexrepo, state, xna
 
 FRAME_LINE = re.compile(r'ReXNative: frames (\d+) \| per frame: draws ([\d.]+).*?frame ([\d.]+) ms')
 CRASH = re.compile(r'crash report, rexglue|==== end of crash report|\bFATAL\b|access violation',
@@ -552,8 +552,7 @@ def capture_frame(live_dir, timeout=10.0):
 
 def _control(run, line):
     """Um comando para o renderizador (<run>/live/control.txt, lido e apagado a cada imagem)."""
-    with open(os.path.join(run, 'live', 'control.txt'), 'a', encoding='ascii') as f:
-        f.write(line + '\n')
+    fsutil.send_control(os.path.join(run, 'live', 'control.txt'), line)
 
 
 # One game at a time on the test bench (live.ps1's default state keeps one game): the build lane's
@@ -694,8 +693,7 @@ def _timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fa
             while route and el >= route[0][0]:
                 _, buttons, ms = route.pop(0)
                 try:
-                    with open(control, 'a', encoding='ascii') as f:
-                        f.write('pad %s %d\n' % (buttons, ms))
+                    fsutil.send_control(control, 'pad %s %d' % (buttons, ms))
                     job.log('pad %s at %.0f s' % (buttons, el))
                 except OSError as e:
                     job.log('pad %s not sent: %s' % (buttons, e))
