@@ -644,7 +644,11 @@ def _timed_run(job, slug, run, name, mode, boot=False, flags='', pair_classic=Fa
     times = sorted(int(t) for t in cfg.get('compare_times') or [15, 30, 45, 60])
     if quick:  # quick: só se arranca (os testes de suspeitos), sem capturas, quick_boot_seconds
         times = []
-    extra = '--rexnative_capture_xenos=false'  # só a imagem do renderizador, nos dois modos
+    # Só a imagem do renderizador, nos dois modos, e como o ecrã a mostra: com a rampa de gama do
+    # jogo (capture_shown, ReXNative a1b198b). Antes a do nativo vinha sem ela e a do clássico com
+    # ela, e um jogo que escurece a imagem pela rampa (Marble Blast, Limbo) parecia sempre mais
+    # claro no nativo. Uma compilação mais antiga ignora a opção.
+    extra = '--rexnative_capture_xenos=false --rexnative_capture_shown=true'
     if mode == 'classic':
         extra += ' --rexnative_classic=true'
     if flags:

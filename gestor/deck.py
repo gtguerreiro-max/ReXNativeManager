@@ -1091,7 +1091,8 @@ def capture(job, dk, g, dest, seconds=40):
     path = g['path'] if g['path'].startswith('/') else posixpath.join(home, g['path'])
     cap = posixpath.join(path, 'capture-gestor')
     wine_cap = 'Z:' + cap.replace('/', chr(92))
-    flags = '--rexnative_capture_dir=%s --rexnative_capture_xenos=false --rexnative_d3d_stats_frames=120' % wine_cap
+    flags = ('--rexnative_capture_dir=%s --rexnative_capture_xenos=false --rexnative_capture_shown=true '
+             '--rexnative_d3d_stats_frames=120' % wine_cap)
     exe_re = re.escape(name) + r'\.exe --log'
     dk.ssh('rm -rf %s && mkdir -p %s && cd %s && printf "%%s\n" %s > try.flags' % (
         q(cap), q(cap), q(path), q(flags)), timeout=30)

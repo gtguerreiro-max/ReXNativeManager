@@ -359,3 +359,23 @@ button.gch.focus, button.gch:focus { border-color: var(--accent); background: #f
 .mopt.focus, .mopt:focus { border-color: var(--accent); background: #ffffff16; }
 .mopt[disabled] { cursor: default; }
 .mopt[disabled] .mt b, .mopt[disabled] .box { opacity: .45; }
+
+/* Settings > Accounts: one row per account, its state and one button; the sign-in sheets */
+.acct { display: flex; align-items: center; gap: 16px; padding: 12px 16px; border-radius: 12px; background: #ffffff0d; }
+.acct .mt { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.acct .mt b { font-size: 18px; font-weight: 700; }
+.acct .d { flex-basis: 100%; color: var(--muted); font-size: 15px; }
+.acct .btn { flex: none; min-width: 150px; }
+.field2 { display: flex; gap: 14px; align-items: baseline; width: 100%; text-align: left; padding: 12px 16px; border-radius: 12px;
+  background: #0b0e10; border: 2px solid var(--line); color: var(--text); cursor: pointer; outline: none; font-size: 18px; }
+.field2 .l { color: var(--muted); font-size: 14px; min-width: 130px; }
+.field2 .v { overflow-wrap: anywhere; }
+.field2.focus, .field2:focus { border-color: var(--accent); }
+.signin .qrrow { display: flex; gap: 24px; align-items: center; }
+.signin .qr { width: 260px; height: 260px; flex: none; border-radius: 12px; background: #fff; display: grid; place-items: center; }
+.signin .qr img { width: 244px; height: 244px; image-rendering: pixelated; }
+.signin .qrtext p { margin-top: 0; }
+.signin .bigcode { font: 800 46px/1.2 "DejaVu Sans Mono", Consolas, monospace; letter-spacing: 4px; color: var(--accent); margin: 8px 0; }
+.osk h3 { margin: 0 0 12px; }
+.key.on { background: var(--accent2); }
+.setsec + .setsec { margin-top: 28px; }

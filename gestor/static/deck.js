@@ -375,7 +375,7 @@ function render(t) {
   else if (t === 'catalog') renderCatalog();
   else if (t === 'orders') renderOrders();
   else if (t === 'log') { renderLog(); loadLog(); }
-  else if (t === 'settings') { renderSettings(); loadMode(); }
+  else if (t === 'settings') { renderSettings(); loadMode(); loadAccounts(); }
   logBadge();
 }
 
@@ -863,6 +863,10 @@ function openDeckGame(slug) {
   const fr = g.fresh;
   const stale = fr && fr.state === 'desatualizado';
   if (stale) notes.push(`Built before ${[fr.missing_count ? fr.missing_count + ' ReXNative fix(es)' : '', fr.sdk_changed ? 'the new SDK' : ''].filter(Boolean).join(' and ')}: rebuild to get them (${isLocal() ? 'it takes a while on the Deck' : '5 to 7 min on the PC'}).`);
+  // Sem PC mode, a game the PC built and sent: no work folder here. Its settings, saves and
+  // achievements work all the same; updating it or a report needs it built here first.
+  const pcBuilt = isLocal() && !g.on_pc;
+  const mine = g.on_pc || pcBuilt;
   openLayer(`<div class="sheet detail">
     <div class="big">${img(g.title, g.slug)}</div>
     <div class="grow">
@@ -881,18 +885,76 @@ function openDeckGame(slug) {
         ${g.on_pc && (g.update || !g.complete || (!g.in_library && !g.pending_add)) ? `<button class="btn p f" data-hint="Send" onclick="updateGame('${esc(g.slug)}')">${g.update ? 'Update' : 'Complete'}</button>` : ''}
         ${g.on_pc && stale && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(g.slug)}')">Rebuild and send</button>` : ''}
         ${g.achievements && g.achievements.count ? `<button class="btn f" data-hint="Open" onclick="openAchievements('${esc(g.slug)}')">Achievements</button>` : ''}
-        ${g.on_pc ? `<button class="btn f" onclick="openSettings('${esc(g.slug)}')">Settings</button>` : ''}
-        ${g.on_pc ? `<button class="btn f" onclick="openReport('${esc(g.slug)}')">Report a problem</button>` : ''}
-        ${g.on_pc ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
+        ${pcBuilt && !g.job ? `<button class="btn f" data-hint="Build" onclick="openTakeover('${esc(g.slug)}')">Build on this Deck</button>` : ''}
+        ${mine ? `<button class="btn f" onclick="openSettings('${esc(g.slug)}')">Settings</button>` : ''}
+        ${g.on_pc ? `<button class="btn f" onclick="openReport('${esc(g.slug)}')">Report a problem</button>`
+          : pcBuilt ? `<button class="btn f" onclick="openTakeover('${esc(g.slug)}', true)">Report a problem</button>` : ''}
+        ${mine ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
+        ${isLocal() && !g.job && (g.where === 'sd' || ((S.home || {}).deck || {}).sd) ? `<button class="btn f" onclick="openMove('${esc(g.slug)}')">${g.where === 'sd' ? 'Move to internal storage' : 'Move to the microSD card'}</button>` : ''}
         ${linuxButton(g)}
         <button class="btn d f" onclick="confirmDelete('${esc(g.slug)}')">Delete from Deck</button>
         <button class="btn f" onclick="closeLayer()">Close</button>
       </div>
-      ${g.on_pc ? '' : `<div class="note">This game is not in the ${isLocal() ? "Manager's folders on this Deck" : 'PC folders'}: it can only be deleted.</div>`}
+      ${g.on_pc ? '' : pcBuilt ? '<div class="note">The PC built this game. Play it, change its settings, restore its saves and see its achievements here; to update it, rebuild it or have Claude look at a problem on this Deck, build it here first (Build on this Deck).</div>'
+        : '<div class="note">This game is not in the PC folders: it can only be deleted.</div>'}
       <div id="gcard"><div class="note">Reading the versions…</div></div>
     </div></div>`);
-  if (g.on_pc) loadGameCard(slug);
+  if (mine) loadGameCard(slug);
   else $('#gcard').innerHTML = '';
+}
+// Sem PC mode: the game moved between internal storage and the microSD card, its saves with it.
+function openMove(slug) {
+  const g = deckGame(slug) || { title: slug };
+  const to = g.where === 'sd' ? 'internal' : 'sd';
+  const sp = ((S.home || {}).deck || {}).space || {};
+  const free = (to === 'sd' ? sp.sd : sp.interno) || {};
+  const there = to === 'sd' ? 'the microSD card' : 'internal storage';
+  const short = g.size != null && free.free != null && g.size + 5e8 > free.free;
+  openLayer(`<div class="sheet confirm" style="width:760px"><h3>Move ${esc(g.title)} to ${there}?</h3>
+    <p>The game (${gb(g.size)}) and its saves go to ${there} (${gb(free.free)} free there), then the old copy is removed. Steam's shortcut follows when you exit the Manager.${g.on_pc ? '' : ' The PC built it: its folder is copied as it is.'}</p>
+    ${short ? '<p style="color:var(--warn)">There is not enough space there.</p>' : ''}
+    <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
+      <button class="btn p f" onclick="doMove('${esc(slug)}', '${to}')"${short ? ' disabled' : ''}>Move</button></div></div>`, { focus: '.btn:not(.p)' });
+}
+async function doMove(slug, to) {
+  try {
+    await api('/api/remote/move/' + encodeURIComponent(slug), { body: { to } });
+    closeAll();
+    toast('Moving: follow it in Requests');
+    setTimeout(() => refreshHome(), 1500);
+  } catch (e) { toast(e.message, true); }
+}
+// Sem PC mode: a game the PC built, built again on this Deck (its archive from the catalogue, the
+// PC's recipe), over the PC's copy: the saves and settings stay; then it is this Deck's game.
+async function openTakeover(slug, report) {
+  const g = deckGame(slug) || { title: slug };
+  let t;
+  try { t = await api('/api/remote/takeover/' + encodeURIComponent(slug), { timeout: 90000 }); }
+  catch (e) { toast(e.message, true); return; }
+  const lead = report ? `<p>The PC built ${esc(g.title)}. Claude looks at a problem on this Deck once the game is built here: build it first, then Report a problem works on it.</p>` : '';
+  if (!t.possible) {
+    openLayer(`<div class="sheet confirm" style="width:760px"><h3>Build ${esc(g.title)} on this Deck</h3>${lead}
+      <p>${esc(t.why)}</p><div class="acts"><button class="btn f" onclick="closeLayer()">Close</button></div></div>`);
+    return;
+  }
+  const mins = t.prepare_min || [0, 0];
+  const steps = [t.download ? `download ${gb(t.download)} (about ${t.download_min} min)` : 'its archive is already on the Deck',
+    `prepare, build and test it: ${mins[0]} to ${mins[1]} min${t.recipe ? ", with what the PC's prepare learned" : ''}`];
+  openLayer(`<div class="sheet confirm" style="width:820px"><h3>Build ${esc(g.title)} on this Deck</h3>${lead}
+    <p>It takes about ${mins[0] + (t.download_min || 0)} to ${mins[1] + (t.download_min || 0)} minutes: ${esc(steps.join(', then '))}. While you play, it waits.</p>
+    <p>Space: about ${gb(t.need)} while it builds; the Deck has ${gb(t.free)} free.${t.enough ? '' : ' <b style="color:var(--warn)">Not enough: delete a game or move one to the microSD card first.</b>'}</p>
+    <p>Your saves and your settings for this game stay. Afterwards it is this Deck's game: Update, Rebuild and Report a problem work here. If you use the PC again (PC or Automatic mode), the PC's next update of this game replaces this build; the saves stay.</p>
+    <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
+      <button class="btn p f" onclick="doTakeover('${esc(slug)}')"${t.enough ? '' : ' disabled'}>Build it here</button></div></div>`, { focus: '.btn:not(.p)' });
+}
+async function doTakeover(slug) {
+  const g = deckGame(slug) || { title: slug };
+  try {
+    await api('/api/remote/takeover/' + encodeURIComponent(slug), { body: {}, timeout: 90000 });
+    closeAll();
+    toast(`Building ${g.title} on this Deck: follow it in Requests`);
+    setTimeout(() => refreshHome(), 1500);
+  } catch (e) { toast(e.message, true); }
 }
 // O cartão do jogo: a versão no Deck e a do PC, o que cada uma corrige, o histórico, os relatórios.
 const when2 = t => { if (!t) return '?'; const d = new Date(typeof t === 'number' ? t * 1000 : t); return d.toLocaleString('en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); };
@@ -1425,6 +1487,7 @@ async function doOrder(key) {
 
 // -- teclado no ecrã ----------------------------------------------------------------------------
 const OSK = ['1234567890', 'QWERTYUIOP', 'ASDFGHJKL', 'ZXCVBNM'];
+const OSK_SYMBOLS = '@.-_+#!?$%&*()=/:;';
 function openSearch() {
   openKeyboard(S.f.q, { live: t => { S.f.q = t; S.shown = 60; renderCatalog(); }, done: () => restoreFocus(), clear: true });
 }
@@ -1484,25 +1547,42 @@ async function sendReport(slug) {
 }
 // O teclado no ecrã (a procura do catálogo e o texto livre dos relatórios). live: a cada tecla;
 // done: com o texto, quando fecha; clear: a tecla Clear (senão uma vírgula).
+// opts.full: capitals (Shift) and symbols, typed as they are (e-mails, passwords, sign-in codes);
+// opts.secret: dots in place of what is typed (a password), never shown or kept anywhere else.
 function openKeyboard(initial, opts = {}) {
   let text = initial || '';
-  const rows = OSK.map(r => `<div class="row">${[...r].map(c => `<button class="key f" data-k="${c}">${c}</button>`).join('')}</div>`).join('');
-  const draw = () => { $('.field span', layer.el).textContent = text; if (opts.live) opts.live(text); };
+  let upper = false;
+  const keys = opts.full ? OSK.concat([OSK_SYMBOLS]) : OSK;
+  const rows = keys.map(r => `<div class="row">${[...r].map(c => `<button class="key f" data-k="${esc(c)}">${esc(c)}</button>`).join('')}</div>`).join('');
+  const shown = () => opts.secret ? '•'.repeat(text.length) : text;
+  const draw = () => { $('.field span', layer.el).textContent = shown(); if (opts.live) opts.live(text); };
   const type = ch => { text += ch; draw(); };
   const del = () => { text = text.slice(0, -1); draw(); };
   const finish = () => { closeLayer(); if (opts.done) opts.done(text.trim()); };
-  const extra = opts.clear ? '<button class="key w2 f" data-k="clr">Clear</button>' : '<button class="key w2 f" data-k=",">,</button>';
-  const layer = openLayer(`<div class="sheet osk"><div class="field"><span></span><i class="c"></i></div>
+  const extra = opts.full ? '<button class="key w2 f" data-k="shift">Shift</button>'
+    : opts.clear ? '<button class="key w2 f" data-k="clr">Clear</button>' : '<button class="key w2 f" data-k=",">,</button>';
+  const layer = openLayer(`<div class="sheet osk">${opts.title ? `<h3>${esc(opts.title)}</h3>` : ''}<div class="field"><span></span><i class="c"></i></div>
     <div class="rows">${rows}<div class="row"><button class="key w4 f" data-k=" ">Space</button><button class="key w2 f" data-k="del">Delete</button>
       ${extra}<button class="key w2 ok f" data-k="ok">Done</button></div></div></div>`,
   { focus: '.key[data-k="Q"]', actions: { x: ['Delete', del], y: ['Space', () => type(' ')], menu: finish } });
+  // Small letters until Shift (opts.full); the plain keyboard types small letters only.
+  const shift = () => {
+    upper = !upper;
+    for (const b of $$('.key', layer.el)) if (/^[A-Z]$/.test(b.dataset.k)) b.textContent = upper ? b.dataset.k : b.dataset.k.toLowerCase();
+    const sk = $('.key[data-k="shift"]', layer.el);
+    if (sk) sk.classList.toggle('on', upper);
+  };
   layer.type = type;
+  layer.full = !!opts.full;
   layer.del = del;
   layer.back = finish;
-  $('.field span', layer.el).textContent = text;
+  $('.field span', layer.el).textContent = shown();
+  if (opts.full) { shift(); shift(); }
   for (const b of $$('.key', layer.el)) b.onclick = () => {
     const k = b.dataset.k;
-    if (k === 'del') del(); else if (k === 'clr') { text = ''; draw(); } else if (k === 'ok') finish(); else type(k.toLowerCase());
+    if (k === 'del') del(); else if (k === 'clr') { text = ''; draw(); } else if (k === 'ok') finish();
+    else if (k === 'shift') shift();
+    else type(/^[A-Z]$/.test(k) && !upper ? k.toLowerCase() : opts.full ? k : k.toLowerCase());
   };
   return layer;
 }
@@ -1806,7 +1886,7 @@ function renderSettings() {
     : m.serving === 'pc' ? `Now the Manager runs on the PC${pc ? ' ' + pc : ''}.` : '';
   v.innerHTML = `${head}<div class="setsec"><h4>Mode</h4><div class="opts">${rows}</div>
     ${m.error ? `<div class="note">Could not read the mode: ${esc(m.error)}</div>` : ''}
-    ${now ? `<div class="note">${esc(now)}</div>` : ''}</div>`;
+    ${now ? `<div class="note">${esc(now)}</div>` : ''}</div>${accountsSection(m)}`;
   // The first time, the focus starts on the mode in use.
   const cur = $(`.mopt.on:not([disabled])`, v);
   if (!S.lastFocus.settings && cur) S.lastFocus.settings = cur.dataset.id;
@@ -1832,6 +1912,167 @@ async function setMode(k) {
     if (S.tab === 'settings' && !S.layers.length) { renderSettings(); restoreFocus(); }
   } catch (e) { toast(e.message, true); }
   finally { S.modeBusy = false; }
+}
+
+// -- Settings > Accounts: archive.org, Claude, GitHub on this Deck -------------------------------
+// One row each: its state and one button (Sign in, Sign out, Install). Claude and GitHub sign in by
+// their own flows on the Deck's service (logins.py): the link as a QR code for the phone, GitHub's code
+// to type there, Claude's code typed back here. The secrets go to the service and the tools only.
+const ACCOUNTS = [
+  ['archive', 'archive.org', 'Downloads the catalogue\'s games'],
+  ['claude', 'Claude', 'Reports and the fixes of a game that fails'],
+  ['github', 'GitHub', 'Pushes Claude\'s fixes, the shared recipes, the app\'s updates'],
+];
+async function loadAccounts() {
+  if (!isLocal()) return;
+  try { S.accounts = await api('/api/remote/accounts', { timeout: 40000 }); S.accountsError = null; }
+  catch (e) { S.accountsError = e.message; }
+  if (S.tab !== 'settings' || S.layers.length) return;
+  const id = S.cur && S.cur.dataset.id;
+  renderSettings();
+  const el = id && $$('.f', $('#v-settings')).find(e => e.dataset.id === id && !e.disabled);
+  if (el) focus(el, false); else restoreFocus();
+  // An install going on: look again in a moment.
+  clearTimeout(S.accountsTimer);
+  if (S.accounts && ACCOUNTS.some(([k]) => (S.accounts[k] || {}).installing)) S.accountsTimer = setTimeout(loadAccounts, 4000);
+}
+function accountsSection(m) {
+  if (!isLocal()) {
+    return `<div class="setsec"><h4>Accounts</h4><div class="note">The sign-ins of this Deck (archive.org, Claude, GitHub) are in the Sem PC mode's Settings.</div>
+      ${m.ready ? `<div class="opts"><button class="btn f" data-id="acct-open" onclick="location.href='${LOCAL}/deck#tab=settings'">Open them on this Deck</button></div>` : ''}</div>`;
+  }
+  const a = S.accounts;
+  if (!a) return `<div class="setsec"><h4>Accounts</h4><div class="note">${S.accountsError ? 'Could not read the accounts: ' + esc(S.accountsError) : 'Reading the accounts\u2026'}</div></div>`;
+  const rows = ACCOUNTS.map(([k, name, what]) => {
+    const x = a[k] || {};
+    const state = !x.installed ? '<span class="bd w">Not installed</span>' : x.signed_in ? '<span class="bd g">Signed in</span>' : '<span class="bd">Not signed in</span>';
+    const who = x.signed_in ? [x.user ? 'as ' + x.user : '', x.how || '', k === 'archive' && x.own === false ? 'the system\'s ia.ini' : ''].filter(Boolean).join(' \u00b7 ') : '';
+    let btn;
+    if (x.installing) btn = '<button class="btn f" disabled>Installing\u2026</button>';
+    else if (!x.installed) btn = `<button class="btn p f" data-id="acct-${k}" onclick="accountInstall('${k}')">Install</button>`;
+    else if (!x.signed_in) btn = `<button class="btn p f" data-id="acct-${k}" onclick="accountSignIn('${k}')">Sign in</button>`;
+    else if (k === 'archive' && x.own === false) btn = `<button class="btn f" data-id="acct-${k}" onclick="accountSignIn('${k}')">Use another account</button>`;
+    else btn = `<button class="btn f" data-id="acct-${k}" onclick="accountSignOut('${k}')">Sign out</button>`;
+    return `<div class="acct"><span class="mt"><b>${esc(name)}</b>${state}<span class="d">${esc(who || what)}</span></span>${btn}</div>`;
+  }).join('');
+  return `<div class="setsec"><h4>Accounts</h4><div class="opts">${rows}</div></div>`;
+}
+async function accountInstall(k) {
+  try { await api(`/api/remote/accounts/${k}/install`, { body: {} }); toast('Installing ' + (k === 'claude' ? 'Claude Code' : 'the GitHub CLI') + ' on this Deck'); }
+  catch (e) { toast(e.message, true); }
+  loadAccounts();
+}
+function accountSignOut(k) {
+  const name = (ACCOUNTS.find(x => x[0] === k) || [k, k])[1];
+  openLayer(`<div class="sheet confirm"><h3>Sign out of ${esc(name)}?</h3>
+    <p>${esc(k === 'archive' ? 'Downloads from the catalogue stop until you sign in again.' : k === 'claude' ? 'Reports and the automatic fixes stop until you sign in again.' : 'Claude\'s fixes stay on this Deck, not pushed, until you sign in again.')}</p>
+    <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
+      <button class="btn p f" onclick="accountSignOutNow('${k}')">Sign out</button></div></div>`, { focus: '.btn:not(.p)' });
+}
+async function accountSignOutNow(k) {
+  closeLayer();
+  try { S.accounts = await api(`/api/remote/accounts/${k}/sign-out`, { body: {}, timeout: 40000 }); toast('Signed out'); }
+  catch (e) { toast(e.message, true); }
+  loadAccounts();
+}
+function accountSignIn(k) {
+  if (k === 'archive') return archiveSignIn();
+  return flowSignIn(k);
+}
+// archive.org: the e-mail and the password (or, for an account that signs in with Google, its S3 keys
+// from archive.org/account/s3.php), typed with the page's keyboard. The password is never kept.
+function archiveSignIn() {
+  const f = { keys: false, email: '', password: '', access: '', secret: '' };
+  const field = (id, label, secret) => `<button class="field2 f" data-fid="${id}" onclick="archiveField('${id}')"><span class="l">${label}</span><span class="v">${secret ? '\u2022'.repeat(f[id].length) || '\u2014' : esc(f[id]) || '\u2014'}</span></button>`;
+  const fields = () => f.keys ? field('access', 'S3 access key') + field('secret', 'S3 secret key', true)
+    : field('email', 'E-mail') + field('password', 'Password', true);
+  const swap = () => f.keys ? 'Use the e-mail and password' : 'An account with Google? Use its S3 keys';
+  const layer = openLayer(`<div class="sheet confirm" style="width:760px"><h3>Sign in to archive.org</h3>
+    <p>The games of the catalogue are lent to signed-in accounts. The password goes to archive.org only and is never kept on the Deck.</p>
+    <div class="fields opts">${fields()}</div>
+    <div class="acts"><button class="btn f swap" onclick="archiveSwap()">${swap()}</button><button class="btn f" onclick="closeLayer()">Cancel</button>
+      <button class="btn p f" onclick="archiveSubmit()">Sign in</button></div></div>`, { focus: '.field2' });
+  layer.form = f;
+  layer.draw = () => { $('.fields', layer.el).innerHTML = fields(); $('.swap', layer.el).textContent = swap(); };
+}
+function archiveLayer() { return S.layers.find(l => l.form); }
+function archiveSwap() { const l = archiveLayer(); l.form.keys = !l.form.keys; l.draw(); focus($('.field2', l.el)); }
+function archiveField(id) {
+  const l = archiveLayer();
+  const titles = { email: 'archive.org e-mail', password: 'archive.org password', access: 'S3 access key', secret: 'S3 secret key' };
+  openKeyboard(l.form[id], { full: true, secret: id === 'password' || id === 'secret', title: titles[id], done: t => {
+    l.form[id] = t; l.draw();
+    const el = $$('.field2', l.el).find(e => e.dataset.fid === id);
+    if (el) focus(el);
+  } });
+}
+async function archiveSubmit() {
+  const l = archiveLayer();
+  const f = l.form;
+  const body = f.keys ? { access: f.access, secret: f.secret } : { email: f.email, password: f.password };
+  if (!Object.values(body).every(Boolean)) { toast('Fill in both fields first', true); return; }
+  try {
+    S.accounts = await api('/api/remote/accounts/archive/sign-in', { body, timeout: 40000 });
+    f.password = f.secret = '';
+    closeLayer();
+    toast('Signed in to archive.org' + ((S.accounts.archive || {}).user ? ' as ' + S.accounts.archive.user : ''));
+  } catch (e) { toast(e.message, true); }
+  loadAccounts();
+}
+// Claude and GitHub: the tool's own sign-in on the Deck, followed here until it ends.
+async function flowSignIn(k) {
+  let v;
+  try { v = await api(`/api/remote/accounts/${k}/sign-in`, { body: {}, timeout: 40000 }); }
+  catch (e) { toast(e.message, true); return; }
+  const gh = k === 'github';
+  const layer = openLayer(`<div class="sheet confirm signin" style="width:860px"><h3>Sign in to ${gh ? 'GitHub' : 'Claude'}</h3>
+    <div class="qrrow"><div class="qr"><div class="spin"></div></div><div class="qrtext">
+      ${gh ? '<p>On your phone, scan the code (or open <b>github.com/login/device</b>), sign in, and type this code there:</p><div class="bigcode">\u2026</div>'
+        : '<p>On your phone, scan the code and sign in with your Claude account (Google works too). The page then shows a code: type it here.</p>'}
+      <div class="flowstate note"></div></div></div>
+    <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
+      ${gh ? '' : '<button class="btn p f" onclick="flowCode()">Type the code</button>'}</div></div>`, { focus: gh ? '.btn' : '.btn.p' });
+  layer.flow = k;
+  let shownUrl = null;
+  const show = f => {
+    if (!f) return;
+    if (f.url && f.url !== shownUrl && !f.done) {
+      shownUrl = f.url;
+      $('.qr', layer.el).innerHTML = `<img alt="QR code" src="/api/remote/accounts/${k}/qr?n=${Date.now()}">`;
+    }
+    if (gh && f.code) $('.bigcode', layer.el).textContent = f.code;
+    $('.flowstate', layer.el).textContent = f.error ? 'It did not sign in: ' + f.error : f.done && f.ok ? 'Signed in.' : 'Waiting for the sign-in\u2026';
+  };
+  show(v);
+  const tick = async () => {
+    if (!S.layers.includes(layer)) return;
+    try {
+      const a = await api(`/api/remote/accounts/${k}/flow`, { timeout: 40000 });
+      show(a.flow);
+      if (a.flow && a.flow.done && a.flow.ok) {
+        layer.finished = true;
+        closeLayer();
+        toast('Signed in to ' + (gh ? 'GitHub' : 'Claude') + (a.user ? ' as ' + a.user : ''));
+        return;
+      }
+    } catch (e) { /* the next look */ }
+    layer.timer = setTimeout(tick, 2000);
+  };
+  layer.timer = setTimeout(tick, 1500);
+  layer.onclose = () => {
+    clearTimeout(layer.timer);
+    if (!layer.finished) api(`/api/remote/accounts/${k}/cancel`, { body: {} }).catch(() => {});
+    loadAccounts();
+  };
+}
+function flowCode() {
+  const l = S.layers.find(x => x.flow === 'claude');
+  if (!l) return;
+  openKeyboard('', { full: true, title: 'The code from Claude\'s page', done: async t => {
+    if (!t) return;
+    try { await api('/api/remote/accounts/claude/code', { body: { code: t }, timeout: 40000 }); $('.flowstate', l.el).textContent = 'Checking the code\u2026'; }
+    catch (e) { toast(e.message, true); }
+  } });
 }
 
 // -- sair ---------------------------------------------------------------------------------------
@@ -1884,6 +2125,7 @@ function showPair() {
 document.addEventListener('keydown', e => {
   pad.key = Date.now();
   const l = S.layers[S.layers.length - 1];
+  if (l && l.type && l.full && e.key.length === 1) { l.type(e.key); e.preventDefault(); return; }
   if (l && l.type && e.key.length === 1 && /[\w ]/.test(e.key)) { l.type(e.key.toLowerCase()); e.preventDefault(); return; }
   if (l && l.del && e.key === 'Backspace') { l.del(); e.preventDefault(); return; }
   const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };

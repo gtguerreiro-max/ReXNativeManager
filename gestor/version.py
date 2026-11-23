@@ -8,10 +8,111 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.24.2'
+VERSION = '1.27.5'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.27.5', '2026-11-23', [
+        "Native vs classic comparisons no longer call the native picture brighter in games that "
+        "darken it through the console's gamma ramp (Marble Blast Ultra, Limbo, Halo CEA, Castle "
+        "Crashers). The native capture was the picture before the ramp, and the classic one after "
+        "it. Checked frame by frame against the classic renderer, those four games showed the "
+        "same picture.",
+        "ReXNative a1b198b: captures can be taken as the screen shows them "
+        "(--rexnative_capture_shown). The boot test and the Deck capture now ask for that. A game "
+        "built before it ignores the option, so rebuild it to get a fair comparison.",
+        "ReXNative 109d604 (with ReXGlue SDK patch 0043): Iron Brigade's title screen and menu "
+        "panels no longer have grey blacks. Draws that blend into the console's gamma render "
+        "targets stored the PC's sRGB values instead of the console's own. The title screen now "
+        "matches the classic renderer (PSNR 26.5 to 51.1 dB). Rebuild a game to get it.",
+    ]),
+    ('1.27.4', '2026-11-22', [
+        "Sem PC mode: a game whose prepare fails now stops at Prepare, and Claude looks at that step. "
+        "ReXNative's prepare reported the failure in its table but ended as if it had worked, so the "
+        "boot test failed with no build and Claude's step ended at once. Burnout Crash on the Deck "
+        "failed like this.",
+        "ReXNative 0975a2e: on the Deck, a game that names its executable DEFAULT.XEX (Burnout Crash) "
+        "no longer fails its prepare at the title update step.",
+    ]),
+    ('1.27.3', '2026-11-22', [
+        "Sem PC mode: downloads on the Deck are several times faster. archive.org gives one "
+        "connection 0.5 to 1.5 MB/s, whatever the Wi-Fi (the Deck's did 780 Mbit/s), and three at "
+        "once gave 3.7 MB/s. The Deck now downloads a game in 16 MB parts over 4 connections. A "
+        "stopped download goes on with the parts it lacks, a part whose connection drops is asked "
+        "again, and the MD5 is still checked at the end. Reconnecting one slow connection (1.24.2) "
+        "did not help, because a new connection is no faster.",
+    ]),
+    ('1.27.2', '2026-11-22', [
+        "Sem PC mode: games the Deck makes get their Steam artwork, as on the PC. A Covers step takes "
+        "the box's official front from XboxUnity, the Xbox 360 Marketplace's background and its "
+        "tile, and makes the library capsule, the wide capsule, the banner and the icon. A game "
+        "already in the library gets them in Steam's grid folder, with no restart. Lazy Raiders, "
+        "Limbo and Darwinia had none.",
+    ]),
+    ('1.27.1', '2026-11-22', [
+        "Recipes carry a game's own headers too (src/game_*.h): Lazy Raiders' fix from the Deck "
+        "(src/game_pch.h, with ReXNative d14acd5) now reaches the PC with its recipe.",
+    ]),
+    ('1.27.0', '2026-11-22', [
+        "Sem PC mode: a game the PC built and sent is no longer just Play and Delete. Its Settings, "
+        "Restore saves and Achievements work on the Deck, and its card shows its versions.",
+        "Build on this Deck: a game the PC built is built again on the Deck. Its archive comes from "
+        "the Deck's catalogue, and the PC's recipe makes the prepare shorter. It is installed over the "
+        "PC's copy, keeping the saves and your settings. The page says first how long it takes and how "
+        "much space it needs. Afterwards it is the Deck's game: Update, Rebuild and Report a problem "
+        "work on it. If you use the PC again, the PC's next update of the game replaces that build.",
+        "Report a problem on a game the PC built, in Sem PC mode, now offers to build it on the Deck "
+        "first, instead of nothing.",
+        "Move to the microSD card / Move to internal storage on every game on the Deck, with its saves. "
+        "A game the PC built is copied as it is.",
+        "Achievements of games the PC sends: ReXNative 7a44fae puts the game's achievements list "
+        "(achievements.spa, a few hundred KB) in its Deck folder. Games sent before get it with their "
+        "next update from the PC.",
+    ]),
+    ('1.26.0', '2026-11-22', [
+        "Deck page, Settings: a new Accounts section with every sign-in of the Deck, one row each "
+        "(archive.org, Claude, GitHub). Each row shows its state and has one button: Sign in, Sign "
+        "out (it asks first) or Install.",
+        "Signing in needs no typing where it can be avoided. GitHub shows its code big, and a QR code "
+        "to scan with the phone; the page notices by itself when you are done. Claude shows a QR code; "
+        "you type back the code its page gives you. archive.org takes the e-mail and password (or the "
+        "S3 keys of an account that signs in with Google) on the page's keyboard, which now has "
+        "capitals and symbols; the password shows as dots and is never kept.",
+        "In PC mode, Settings has a button that opens the Deck's own accounts.",
+        "Sem PC mode: a fix Claude makes to ReXNative on the Deck is now committed and pushed to main, "
+        "as on the PC (signed in to GitHub on the Deck). If the push cannot happen, the commit stays "
+        "on the Deck and is pushed before the next build. A report says \"committed and pushed (...)\" "
+        "or \"committed here, not pushed (why)\".",
+        "The Deck takes ReXNative's newest main before each build, so the PC and the Deck build the "
+        "same code.",
+        "With the GitHub sign-in, the Deck's updates and the shared recipes work without deploy keys.",
+    ]),
+    ('1.25.1', '2026-11-22', [
+        "Sem PC mode: the boot test no longer fails a game that works when you play during it. "
+        "While you play, the Deck's work stops, and the test counted that time as its own; it now "
+        "counts only the time it runs.",
+        "While you play, Claude's test game stops too (it went on in the background), and cancelling "
+        "Claude's step now closes it.",
+        "A full disk no longer leaves a request stuck as running and that queue dead until a restart: "
+        "the request fails and the next one goes on. The Deck's page still answers on a full disk.",
+        "Before a download and before a prepare the Deck checks its free space (as the PC does), and a "
+        "full disk during a download says so at once instead of retrying for minutes.",
+        "A prepare stopped half way (the battery, a cancel) no longer goes on from a half-extracted "
+        "archive the next time (ReXNative e7b327a).",
+        "When archive.org asks for the sign-in again, the Deck says how to sign in on the Deck.",
+        "Deleting a game that did not finish installing on the microSD card removes it; moving a game "
+        "to internal storage no longer puts it back on the card; a recipe that cannot be shared no "
+        "longer fails an install that finished.",
+        "One request a game: two asked at the same moment for one game can no longer both start.",
+    ]),
+    ('1.25.0', '2026-11-22', [
+        "Sem PC mode: a game that fails while the Deck makes it goes to Claude, as on the PC. When "
+        "Prepare, the build or the boot test fails, Claude on the Deck (signed in once) looks for the "
+        "cause, fixes it, and the step runs again, twice at most per game. The fix stays on the Deck.",
+        "A game the native renderer cannot start, with no fix, tries ReXGlue's classic renderer instead "
+        "of failing, and starts on it from then on (the HUD, View + Menu, switches to the native one).",
+        "On the Deck, two games ordered in the same second no longer write into one log.",
+    ]),
     ('1.24.2', '2026-11-22', [
         "Sem PC mode: downloads on the Deck no longer stay slow. archive.org's transfer could fall to "
         "0.4 MB/s and stay there while a new connection did 2.3 to 3 MB/s (measured on the Deck). Like "
