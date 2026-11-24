@@ -15,7 +15,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 
 from . import (achievements, agents, pcdelete, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
-               games, github, info, jobs, lan, linuxbuild, orders, owngames, pipeline, rexlog, rexrepo, saves,
+               games, github, info, jobs, lan, linuxbuild, market, orders, owngames, pipeline, rexlog, rexrepo, saves,
                scenes, sdk, state, tunings, versions, xna)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -140,8 +140,12 @@ def get_catalog(refresh: bool = False):
             e['downloaded'] = 'sim' if have == e['size'] else ('parcial' if have else None)
         e['job'] = active.get((e['item'], e['name']))
         e['info'] = info.compact(e['title'])
+        e['xbla'] = _is_xbla(e)
+        if e['info'] is not None:
+            e['info']['genres'] = market.genres(e['title'], e['xbla'], (info.find(e['title']) or {}).get('genres'))[:3]
         if (xna_seen.get(e['name']) or {}).get('xna'):
             e['unsupported'] = 'XNA'
+    market.prefetch(sorted({(e['title'], e['xbla']) for e in items}))
     xna_info = {'scanned': sum(1 for e in items if e['name'] in xna_seen),
                 'count': sum(1 for e in items if e.get('unsupported') == 'XNA')}
     sources = [{'item': s['item'], 'label': s.get('label') or s['item'],
@@ -200,7 +204,9 @@ def _pipeline_fn(source, work, steps, after_deck=None):
         with pipeline.lane_settings(job):  # the prepare lane works in its own copy of ReXNative
             res = pipeline.run(job, source=source, work=work, steps=steps)
         if after_deck:
-            _submit_deck(res['work'], **after_deck)
+            sent = _submit_deck(res['work'], **after_deck)
+            if isinstance(job.params, dict) and job.params.get('from_deck'):
+                _from_deck(sent)
         return res
     return fn
 
@@ -476,7 +482,14 @@ def list_games():
         act = manager.active(game=g['slug'])
         g['active_job'] = act[0].id if act else None
         g['info'] = info.compact(g.get('title') or g['slug'])
+        gen = market.game_genres(g.get('title_id'), (info.find(g.get('title') or g['slug']) or {}).get('genres'))[:3]
+        if g['info'] is not None:
+            g['info']['genres'] = gen
+        elif gen:  # a Wikidata não o conhece: o que a loja diz
+            rel = (market.cached(g.get('title_id')) or {}).get('released')
+            g['info'] = {'genres': gen, 'year': int(rel[:4]) if rel else None, 'mc': None}
         g['fresh'] = _fresh(g)
+    market.prefetch_tids([g.get('title_id') for g in gs])
     return {'games': gs, 'roots': config.load()['work_roots']}
 
 
@@ -1021,6 +1034,42 @@ def deck_status(refresh: bool = False):
         return dict(deck.status(refresh=False), reachable=False, error=str(e))
 
 
+DECK_KINDS = ('deck', 'deck-batch', 'deck-report', 'order', 'deck-gestor', 'deck-plugin', 'deck-flush',
+              'deck-play', 'deck-delete', 'deck-restore')
+
+
+@app.get('/api/deck/link')
+def deck_link():
+    """A ligação com o Deck num relance (o topo do separador Steam Deck): se responde e desde quando,
+    o que está à espera dele (tarefas do Deck, atalhos do Steam por pôr ou tirar), e se o lançador e
+    o plugin do Deck estão na última versão."""
+    st = versions.status()
+    w = dict(watcher.state)
+    waiting = []
+    for j in manager.active():
+        if j.kind in DECK_KINDS:
+            pr = j.progress if isinstance(j.progress, dict) else {}
+            waiting.append({'id': j.id, 'kind': j.kind, 'title': j.title, 'status': j.status,
+                            'phase': pr.get('phase') or pr.get('step')})
+    p = deck.pending()
+    return {'online': w.get('online'), 'since': w.get('since'), 'checked': w.get('checked'),
+            'host': w.get('host'), 'detail': None if w.get('online') else str(w.get('detail') or '')[:240],
+            'jobs': waiting, 'add': [v.get('title') for v in p['add'].values()],
+            'remove': [v.get('name') for v in p['remove'].values()],
+            'kit': st.get('kit'), 'plugin': st.get('plugin'), 'running': st.get('running')}
+
+
+@app.post('/api/deck/link/update')
+def deck_link_update(body: dict = Body(default={})):
+    """Atualizar no Deck o lançador do Gestor (what: kit) ou o plugin do Decky (what: plugin)."""
+    what = body.get('what')
+    if what == 'kit':
+        return _job(_submit_kit('Update the Manager on the Deck'))
+    if what == 'plugin':
+        return _job(_submit_plugin(prompt=True))
+    raise HTTPException(400, 'what: kit or plugin')
+
+
 @app.get('/api/deck/connection')
 def deck_connection():
     cfg = config.load()
@@ -1368,6 +1417,15 @@ def _submit_flush(reason):
                               lambda job: deck.flush_job(job), lane='deck')
 
 
+def _queued_after_close():
+    if not _session['open']:
+        _submit_flush('a game arrived after the Manager closed')
+
+
+deck.ON_QUEUED.append(_queued_after_close)
+_flush_retry = {'at': 0.0}
+
+
 def _session_watch():
     while True:
         time.sleep(15)
@@ -1376,6 +1434,17 @@ def _session_watch():
                 _session['open'] = False
                 _submit_flush('the Manager closed')
                 _submit_play()
+            # Shortcuts still waiting (the last flush found a game open, or the Deck asleep): tried
+            # again every 5 minutes while the Manager is closed, the Deck answers and nothing runs on
+            # it (a game, or the Manager), so Steam is never closed under someone.
+            elif (not _session['open'] and time.time() - _flush_retry['at'] > 300 and watcher.state.get('online')
+                  and not manager.active(kind='deck-flush')):
+                p = deck.pending()
+                if p['add'] or p['remove']:
+                    _flush_retry['at'] = time.time()
+                    ok, _, line = deck.Deck().check()
+                    if ok and not deck.busy_from(line):
+                        _submit_flush('the Deck is free')
         except Exception:  # noqa: BLE001
             pass
 
@@ -1667,6 +1736,8 @@ def remote_mode():
         r = deck.Deck().ssh('cat ~/%s 2>/dev/null || true' % DECK_MODE_FILE, timeout=25)
     except (RuntimeError, subprocess.TimeoutExpired) as e:
         raise HTTPException(503, 'the PC could not read the mode on the Deck: %s' % e)
+    if r.returncode == 255:
+        raise HTTPException(503, 'the PC could not reach the Deck over SSH: %s' % (r.stderr or '').strip()[-200:])
     mode = (r.stdout or '').strip()
     return {'mode': mode if mode in DECK_MODES else 'pc', 'serving': 'pc'}
 
@@ -1713,7 +1784,8 @@ def _submit_play():
     if not p or time.time() - p['at'] > 300:
         return None
     return manager.submit('deck-play', 'Play on the Deck: %s' % p['title'],
-                          lambda job: deck.play_job(job, p['appid'], p['title']), lane='deck', game=p['slug'])
+                          lambda job: deck.play_job(job, p['appid'], p['title'], asked_at=p['at']),
+                          lane='deck', game=p['slug'], params={'from_deck': True})
 
 
 _cat_cache = {'at': 0, 'data': None}
@@ -1742,16 +1814,18 @@ def remote_catalog(since: str = None):
         for key, (_, e) in groups.items():
             g = find_local(e)
             inf = info.compact(e['title']) or {}
+            xbla = _is_xbla(e)
             data.append({'key': key, 'title': e['title'], 'item': e['item'], 'name': e['name'],
-                         'size': e['size'], 'source': e['source'],
-                         'xbla': 'xbla' in e['item'].lower() or e.get('kind') == 'package',
+                         'size': e['size'], 'source': e['source'], 'xbla': xbla,
                          'own': owngames.KINDS.get(e.get('kind')) if e.get('own') else None,
-                         'genres': inf.get('genres') or [], 'year': inf.get('year'), 'mc': inf.get('mc'),
+                         'genres': market.genres(e['title'], xbla, (info.find(e['title']) or {}).get('genres'))[:3],
+                         'year': inf.get('year'), 'mc': inf.get('mc'),
                          'local': g and g['slug'], 'built': bool(g and g.get('built')),
                          'art': bool(g and 'portrait' in (g.get('art') or []))})
         data.sort(key=lambda x: catalog.words(x['title']))
         _cat_cache.update(at=time.time(), data=data)
         catcovers.prefetch([x['title'] for x in data])
+        market.prefetch([(x['title'], x['xbla']) for x in data])
     on_deck = set(deck.index())
     active = {}
     for j in manager.active(kind='order'):
@@ -1765,6 +1839,52 @@ def remote_catalog(since: str = None):
     if since and since == sig:
         return JSONResponse({'same': True, 'sig': sig})
     return Response(text[:-1] + ',"sig":"%s"}' % sig, media_type='application/json')
+
+
+def _is_xbla(e):
+    return 'xbla' in (e.get('item') or '').lower() or e.get('kind') == 'package' or 'XBLA' in (e.get('tags') or [])
+
+
+# -- a ficha de um jogo, como a da loja (market.py): a do Marketplace da Xbox 360 e a da Wikidata --
+def _card(title, slug=None, xbla=None):
+    tid = None
+    if slug:
+        w = games.find(slug)
+        if w:
+            tid = games.info(w).get('title_id')
+            title = title or games.info(w).get('title')
+    if not title:
+        raise HTTPException(400, 'no game given')
+    c = market.card(title, tid=tid, xbla=None if xbla is None else bool(xbla))
+    c['slug'] = slug
+    return c
+
+
+@app.get('/api/card')
+def game_card(title: str = None, slug: str = None, xbla: int = None):
+    return _card(title, slug, xbla)
+
+
+@app.get('/api/remote/card')
+def remote_card(title: str = None, slug: str = None, xbla: int = None):
+    return _card(title, slug, xbla)
+
+
+def _market_img(tid, name):
+    p = market.image(tid, name)
+    if not p:
+        raise HTTPException(404)
+    return FileResponse(p, headers={'Cache-Control': 'max-age=2592000'})
+
+
+@app.get('/api/market/img/{tid}/{name}')
+def market_img(tid: str, name: str):
+    return _market_img(tid, name)
+
+
+@app.get('/api/remote/market/img/{tid}/{name}')
+def remote_market_img(tid: str, name: str):
+    return _market_img(tid, name)
 
 
 @app.get('/api/remote/cover')
@@ -1841,7 +1961,7 @@ def remote_order_retry(job_id: str):
     j = manager.get(job_id)
     if not j or j.kind != 'order':
         raise HTTPException(404)
-    return remote_order({'item': j.params['item'], 'name': j.params['name']})
+    return remote_order({'item': j.params['item'], 'name': j.params['name'], 'root': j.params.get('root')})
 
 
 def _remote_visible(j):
@@ -2020,7 +2140,7 @@ def remote_settings_save(slug: str, body: dict = Body(...)):
     if err:
         raise HTTPException(400, 'invalid TOML: %s' % err)
     games.write_text(path, text)
-    j = _from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True))
+    j = _from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True, wait=True))
     return _job(j)
 
 
@@ -2335,7 +2455,7 @@ def remote_report(slug: str, body: dict = Body(...)):
 
 @app.post('/api/remote/update/{slug}')
 def remote_update(slug: str):
-    return _job(_from_deck(_submit_update(slug, _work(slug))))
+    return _job(_from_deck(_submit_update(slug, _work(slug), wait=True)))
 
 
 def _submit_update(slug, w, wait=False):

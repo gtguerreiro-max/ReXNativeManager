@@ -350,6 +350,39 @@ class Watcher:
     def check_now(self):
         self.wake.set()
 
+    failing_since = None
+
+    def _follow(self, host):
+        """The Deck got another address (DHCP) while the PC's settings keep the old one: after 2
+        minutes without an answer, if the paired Deck's page reached this PC in the last 10 minutes
+        from another address and the SSH port answers there, the settings take that address (the
+        same user and port). Returns the new host, or None."""
+        now = time.time()
+        if self.failing_since is None:
+            self.failing_since = now
+            return None
+        if now - self.failing_since < 120:
+            return None
+        try:
+            from . import lan
+            user, addr, port = parse_host(host)
+            seen = sorted((d for d in lan.devices() if d.get('ip') and now - (d.get('last_seen') or 0) < 600
+                           and 'deck' in (d.get('name') or '').lower()), key=lambda d: -(d.get('last_seen') or 0))
+            for d in seen:
+                ip = d['ip']
+                if ip == addr or ip.startswith('127.') or ':' in ip:
+                    continue
+                if tcp_probe(ip, port, 2.5)[0] == 'open':
+                    new = make_host(user, ip, port)
+                    config.save({'deck_host': new})
+                    self.failing_since = None
+                    print('Deck: %s answers no more; the paired Deck is at %s now: using it' % (host, new),
+                          flush=True)
+                    return new
+        except Exception:  # noqa: BLE001 - the watcher never stops
+            pass
+        return None
+
     def _loop(self):
         while True:
             try:
@@ -357,6 +390,15 @@ class Watcher:
                 _, addr, port = parse_host(host)
                 st, _ = tcp_probe(addr, port, 2.5) if addr else ('unresolved', '')
                 online = st == 'open'
+                if not online:
+                    moved = self._follow(host)
+                    if moved:
+                        host = moved
+                        _, addr, port = parse_host(host)
+                        st, _ = tcp_probe(addr, port, 2.5)
+                        online = st == 'open'
+                else:
+                    self.failing_since = None
                 was = self.state['online']
                 if online != was or host != self.state['host']:
                     self.state['since'] = jobs.now()

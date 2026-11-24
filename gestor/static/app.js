@@ -437,9 +437,56 @@ function subtabs(names, on, fn) {
   return `<div class="subtabs">${names.map(([k, l]) => `<button class="${k === on ? 'on' : ''}" onclick="${fn}('${k}')">${l}</button>`).join('')}</div>`;
 }
 function gameSub(k) { curSub = k; renderGame(); }
+// -- o topo da página do jogo, como a ficha da loja: o fundo, a caixa, os géneros, as notas, e o que
+// se faz com ele (jogar aqui ou no Deck, a página da loja). A ficha vem uma vez por jogo.
+const gameCards = {};
+function gameHeroHtml(g) {
+  const c = gameCards[g.slug] || null;
+  const im = (c && c.images) || {};
+  const s = encodeURIComponent(g.slug), v = Math.round(g.built_at || 0);
+  const bg = c && c.tid && im.background ? storeImg(c.tid, im.background)
+    : (g.art || []).includes('hero') ? `/api/games/${s}/art/hero.png?v=${v}` : null;
+  const box = (g.art || []).includes('portrait') ? `/api/games/${s}/art/portrait.png?v=${v}`
+    : c && c.tid && im.boxart ? storeImg(c.tid, im.boxart) : `/api/remote/cover?t=${encodeURIComponent(g.title)}&slug=${s}`;
+  const genres = c && (c.genres || []).length ? c.genres : (g.info && g.info.genres) || [];
+  const devs = (c && c.developers) || (g.info && g.info.devs) || [], pubs = (c && c.publishers) || (g.info && g.info.pubs) || [];
+  const by = [pubs[0], devs[0] !== pubs[0] ? devs[0] : null, (c && c.year) || (g.info && g.info.year)].filter(Boolean);
+  const mc = (c && c.mc) || (g.info && g.info.mc);
+  const onDeck = g.deck && g.deck.shortcut && g.deck.shortcut.appid;
+  const xbla = /-xbla/.test(g.slug);
+  return `<div class="st-hero ghero" id="ghero" ${bg ? `style="--hero:url('${bg}')"` : ''}><div class="st-hin">
+    <img class="st-box" src="${box}" alt="" onerror="this.style.visibility='hidden'">
+    <div class="st-head">
+      <div class="st-kick">${xbla ? 'Xbox Live Arcade' : 'Xbox 360'}${g.title_update ? ' · title update ' + esc(g.title_update) : ''}</div>
+      <h1>${esc(g.title)}</h1>
+      ${by.length ? `<div class="st-by">${by.map(esc).join(' · ')}</div>` : ''}
+      ${genres.length ? `<div class="st-genres">${genres.map(x => `<span>${esc(x)}</span>`).join('')}</div>` : ''}
+      <div class="st-scores">
+        ${c && c.rating != null ? `<div>${stars(c.rating)} <b>${c.rating.toFixed(1)}</b><span class="muted"> · ${c.ratings.toLocaleString()} player ratings</span></div>` : ''}
+        ${mc ? `<div><span class="mc ${mc >= 75 ? 'h' : mc >= 50 ? 'm' : 'l'}">${mc}</span> Metacritic</div>` : ''}
+        ${g.info && g.info.wiki ? `<a href="https://en.wikipedia.org/wiki/${encodeURIComponent(g.info.wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">Wikipedia</a>` : ''}
+      </div>
+      <div class="row" style="margin-top:12px">${gameBadges(g)}</div>
+      <div class="st-acts">
+        ${g.built ? `<button class="b p big" onclick="playSlug('${esc(g.slug)}', 'pc')">▶ Play on this PC</button>` : ''}
+        ${onDeck ? `<button class="b big" onclick="playSlug('${esc(g.slug)}', 'deck')" title="Through the Deck's Steam, like Play in Deck mode">▶ Play on the Deck</button>` : ''}
+        <button class="b big" onclick="openStore({title: ${esc(JSON.stringify(g.title))}, slug: '${esc(g.slug)}', xbla: ${xbla}, cover: '${box}'})">Store page</button>
+      </div>
+      ${g.built ? `<div class="small muted" style="margin-top:8px">On this PC with the PC settings (F1 in the game opens the settings HUD). A controller or the keyboard: ${PLAY_KEYS}.</div>` : ''}
+    </div></div></div>`;
+}
+function loadGameCard(slug) {
+  if (gameCards[slug]) return;
+  api('/api/card?slug=' + encodeURIComponent(slug)).then(c => {
+    gameCards[slug] = c;
+    const el = $('#ghero');
+    if (el && cur && cur.slug === slug) el.outerHTML = gameHeroHtml(cur);
+  }).catch(() => {});
+}
 function renderGame() {
   const g = cur;
-  let h = subtabs([['resumo', 'Summary'], ['conquistas', 'Achievements'], ['cenas', 'Test scenes'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
+  loadGameCard(g.slug);
+  let h = gameHeroHtml(g) + subtabs([['resumo', 'Summary'], ['conquistas', 'Achievements'], ['cenas', 'Test scenes'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
   if (curSub === 'resumo') h += gameSummary(g);
   if (curSub === 'cenas') h += '<div id="scenebox" class="muted">Loading...</div>';
   if (curSub === 'conquistas') h += '<div id="achbox" class="muted">Loading...</div>';
@@ -547,19 +594,8 @@ function gameSummary(g) {
   const deckTxt = g.deck ? `${g.deck.where === 'sd' ? 'microSD card' : 'internal storage'} — ${gb(g.deck.size)}${g.deck.shortcut ? ', shortcut "' + esc(g.deck.shortcut.name) + '"' : ', no shortcut'}` : 'not installed';
   const pl = g.pipeline;
   const onDeck = g.deck && g.deck.shortcut && g.deck.shortcut.appid;
-  return `<div class="row">${gameBadges(g)}</div>
-  ${g.built || onDeck ? `<div class="row" style="margin-top:12px">
-    ${g.built ? `<button class="b p" onclick="playSlug('${esc(g.slug)}', 'pc')">▶ Play on this PC</button>` : ''}
-    ${onDeck ? `<button class="b" onclick="playSlug('${esc(g.slug)}', 'deck')" title="Through the Deck's Steam, like Play in Deck mode">▶ Play on the Deck</button>` : ''}
-    <span class="small muted">${g.built ? 'with the PC settings (F1 in the game opens the settings HUD)' : ''}</span></div>
-    ${g.built ? `<div class="small muted" style="margin-top:6px">A controller or the keyboard. ${PLAY_KEYS}.</div>` : ''}` : ''}
-  ${g.unsupported ? `<div class="ev fail" style="margin-top:10px">${esc(g.unsupported_why || g.unsupported)}</div>` : ''}
+  return `${g.unsupported ? `<div class="ev fail" style="margin-top:10px">${esc(g.unsupported_why || g.unsupported)}</div>` : ''}
   <div class="kv" style="margin-top:12px">
-    ${g.info ? `<div>Genre</div><div>${esc(g.info.genres.join(', ') || '-')}</div>
-    <div>Year</div><div>${esc(g.info.year || '-')}</div>
-    <div>Developer / publisher</div><div>${esc(g.info.devs.join(', ') || '-')} / ${esc(g.info.pubs.join(', ') || '-')}</div>
-    <div>Metacritic</div><div>${g.info.mc != null ? mcChip(g.info.mc) : '<span class="muted">no score</span>'}
-      ${g.info.wiki ? ` <a href="https://en.wikipedia.org/wiki/${encodeURIComponent(g.info.wiki.replace(/ /g, '_'))}" target="_blank" rel="noopener">Wikipedia</a>` : ''}</div>` : ''}
     <div>Folder</div><div>${esc(g.work)}</div>
     <div>Source</div><div>${esc(g.source || '-')}</div>
     <div>Title ID / version</div><div>${esc(g.title_id || '-')} / ${esc(g.version || '-')}</div>
@@ -1248,20 +1284,54 @@ function entryActions(e) {
   }
   return a.join(' ');
 }
+// O catálogo em capas (como no Deck) ou em lista; um clique abre a ficha do jogo (openCatStore).
+let catView = (() => { try { return localStorage.getItem('gestor-catview') || 'grid'; } catch (e) { return 'grid'; } })();
+let catShown = [];
+function setCatView(v) {
+  catView = v;
+  try { localStorage.setItem('gestor-catview', v); } catch (e) { /* */ }
+  renderCatalog();
+}
+function catTile(e, i) {
+  const b = [];
+  if (e.unsupported) b.push(`<span class="r">${esc(e.unsupported)}</span>`);
+  if (e.local) b.push('<span class="g">In My games</span>');
+  else if (e.own) b.push('<span class="b">Your file</span>');
+  else if (e.downloaded === 'sim') b.push('<span class="b">Downloaded</span>');
+  else if (e.downloaded === 'parcial') b.push('<span class="w">Partial</span>');
+  if (e.job) b.push(`<span class="w" data-job="${e.job}">Working…</span>`);
+  const mc = e.info && e.info.mc;
+  const g = (e.info && e.info.genres || []).slice(0, 2).join(', ');
+  return `<div class="ctile" tabindex="0" onclick="openCatStore(${i})" onkeydown="if(event.key==='Enter')openCatStore(${i})" title="${esc(e.name)}">
+    <div class="cv"><img loading="lazy" src="${catCover(e)}" alt=""><div class="badges">${b.join('')}</div>
+      ${mc ? `<div class="mcb ${mc >= 75 ? 'h' : mc >= 50 ? 'm' : 'l'}">${mc}</div>` : ''}</div>
+    <div class="nm">${esc(e.title)}</div>
+    <div class="sub">${[e.info && e.info.year, g].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</div>
+    <div class="sub">${esc([gb(e.size), (e.tags || []).join(' ')].filter(Boolean).join(' · '))}</div></div>`;
+}
 function renderCatalog() {
   if (!cat) return;
   const rows = catRows();
+  catShown = rows;
   const x = cat.xna || {};
-  $('#ctable').innerHTML = `<p class="muted small">${rows.length} of ${cat.entries.length} files
+  const head = `<div class="row" style="justify-content:space-between;margin-top:6px"><p class="muted small" style="margin:0">${rows.length} of ${cat.entries.length} files
     · ${x.count || 0} XNA game(s), flagged${$('#chidebad').checked ? ' and hidden' : ''} (${x.scanned || 0} XBLA archives checked)
-    <a href="#" onclick="xnaScan();return false">scan for XNA</a></p>
+    <a href="#" onclick="xnaScan();return false">scan for XNA</a> · click a game for its page</p>
+    <span class="seg"><button class="${catView === 'grid' ? 'on' : ''}" onclick="setCatView('grid')">Covers</button><button class="${catView === 'list' ? 'on' : ''}" onclick="setCatView('list')">List</button></span></div>`;
+  const more = rows.length > catLimit ? `<div class="row" style="margin-top:14px"><button class="b" onclick="catLimit+=${catView === 'grid' ? 240 : 500};renderCatalog()">Show more</button></div>` : '';
+  if (catView === 'grid') {
+    $('#ctable').innerHTML = head + `<div class="cgrid">${rows.slice(0, catLimit).map(catTile).join('')}</div>` + more;
+    updateCatalogProgress();
+    return;
+  }
+  $('#ctable').innerHTML = head + `
     <table><tr><th>Game</th><th>Genre</th><th class="num">Year</th><th class="num">Score</th><th>Region</th><th>Source</th><th class="num">Size</th><th>Status</th><th></th></tr>
-    ${rows.slice(0, catLimit).map(e => `<tr><td title="${esc(e.name)}">${esc(e.title)}</td>
+    ${rows.slice(0, catLimit).map((e, i) => `<tr><td title="${esc(e.name)}"><a class="tlink" onclick="openCatStore(${i})">${esc(e.title)}</a></td>
       <td class="small">${esc(genreTxt(e.info))}</td><td class="num small">${e.info && e.info.year || ''}</td>
       <td class="num">${e.info ? mcChip(e.info.mc) : ''}</td>
       <td>${e.tags.map(t => `<span class="chip">${esc(t)}</span>`).join(' ')}</td><td class="small muted">${esc(e.source)}</td>
       <td class="num">${gb(e.size)}</td><td>${entryState(e)}</td><td>${entryActions(e)}</td></tr>`).join('')}</table>
-    ${rows.length > catLimit ? `<div class="row" style="margin-top:10px"><button class="b" onclick="catLimit+=500;renderCatalog()">Show more</button></div>` : ''}`;
+    ${more}`;
   updateCatalogProgress();
 }
 async function updateCatalogProgress() {
@@ -1276,6 +1346,113 @@ async function updateCatalogProgress() {
   });
   if (gone) { const c = await api('/api/catalog'); cat.entries = c.entries; renderCatalog(); loadDownloads(); }
 }
+// -- a ficha do jogo, como a da loja (market.py: o Marketplace da Xbox 360 e a Wikidata) ------------
+// Abre-se no catálogo (um jogo dos ficheiros) e em Os meus jogos (um jogo preparado): o fundo, a
+// caixa, os géneros, as notas, a descrição, as capturas e os modos de jogo.
+let storeShots = [], storeShot = 0;
+const storeImg = (tid, n) => `/api/market/img/${encodeURIComponent(tid)}/${encodeURIComponent(n)}`;
+function stars(r) {
+  if (r == null) return '';
+  const full = Math.floor(r), half = r - full >= 0.25 && r - full < 0.75 ? 1 : 0, up = r - full >= 0.75 ? 1 : 0;
+  const n = full + up;
+  return '<span class="stars" aria-label="' + r + ' of 5">' + '★'.repeat(n) + (half ? '<span class="half">★</span>' : '') +
+    '<span class="off">' + '★'.repeat(Math.max(0, 5 - n - half)) + '</span></span>';
+}
+function fmtDate(d) {
+  if (!d) return '';
+  const t = new Date(d + 'T00:00:00');
+  return isNaN(t) ? d : t.toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+}
+// o: {title, xbla, slug, entry (do catálogo), acts (HTML dos botões)}
+async function openStore(o) {
+  const d = $('#store');
+  d.innerHTML = `<div class="st-wrap"><button class="st-x" onclick="closeStore()" title="Close (Esc)">✕</button>
+    <div class="st-hero st-loading"><div class="st-hin"><img class="st-box" src="${o.cover || ''}" alt="">
+    <div class="st-head"><div class="st-kick">${o.xbla ? 'Xbox Live Arcade' : 'Xbox 360'}</div><h1>${esc(o.title)}</h1>
+    <div class="muted">Reading the game's page…</div></div></div></div></div>`;
+  d.showModal();
+  const q = new URLSearchParams();
+  if (o.title) q.set('title', o.title);
+  if (o.slug) q.set('slug', o.slug);
+  if (o.xbla != null) q.set('xbla', o.xbla ? 1 : 0);
+  let c;
+  try { c = await api('/api/card?' + q); } catch (e) { c = { title: o.title, genres: [], screens: [], modes: [], features: [], images: {} }; }
+  if (!d.open) return;
+  d.innerHTML = storeHtml(c, o);
+}
+function storeHtml(c, o) {
+  const e = o.entry || {};
+  const im = c.images || {};
+  const bg = c.tid && im.background ? storeImg(c.tid, im.background) : null;
+  const box = c.tid && im.boxart ? storeImg(c.tid, im.boxart) : o.cover;
+  storeShots = (c.screens || []).map(n => storeImg(c.tid, n));
+  const by = [(c.publishers || [])[0], (c.developers || [])[0] !== (c.publishers || [])[0] ? (c.developers || [])[0] : null, c.year].filter(Boolean);
+  const facts = [];
+  if ((c.developers || []).length) facts.push(['Developer', c.developers.join(', ')]);
+  if ((c.publishers || []).length) facts.push(['Publisher', c.publishers.join(', ')]);
+  if (c.released) facts.push(['Released', fmtDate(c.released)]);
+  else if (c.year) facts.push(['Released', String(c.year)]);
+  if (e.size) facts.push([e.own ? 'Size' : 'Download', gb(e.size)]);
+  if ((e.tags || []).length) facts.push(['Region', e.tags.join(', ')]);
+  if (e.source) facts.push(['Source', e.own ? 'Your files' : e.source]);
+  if (e.name) facts.push(['File', e.name]);
+  if (c.tid) facts.push(['Title ID', c.tid]);
+  const desc = (c.description || '').split(/\n{2,}/).map(p => `<p>${esc(p.trim())}</p>`).join('');
+  return `<div class="st-wrap"><button class="st-x" onclick="closeStore()" title="Close (Esc)">✕</button>
+    <div class="st-hero" ${bg ? `style="--hero:url('${bg}')"` : ''}><div class="st-hin">
+      <img class="st-box" src="${box || ''}" alt="" onerror="this.style.visibility='hidden'">
+      <div class="st-head">
+        <div class="st-kick">${o.xbla ? 'Xbox Live Arcade' : 'Xbox 360'}${c.store ? ' · Xbox 360 Marketplace' : ''}</div>
+        <h1>${esc(c.title || o.title)}</h1>
+        ${by.length ? `<div class="st-by">${by.map(esc).join(' · ')}</div>` : ''}
+        ${(c.genres || []).length ? `<div class="st-genres">${c.genres.map(g => `<span>${esc(g)}</span>`).join('')}</div>` : ''}
+        <div class="st-scores">
+          ${c.rating != null ? `<div>${stars(c.rating)} <b>${c.rating.toFixed(1)}</b><span class="muted"> · ${c.ratings.toLocaleString()} player ratings</span></div>` : ''}
+          ${c.mc ? `<div><span class="mc ${c.mc >= 75 ? 'h' : c.mc >= 50 ? 'm' : 'l'}">${c.mc}</span> Metacritic</div>` : ''}
+        </div>
+        <div class="st-acts">${o.acts || ''}</div>
+      </div></div></div>
+    <div class="st-body">
+      <div class="st-main">
+        ${desc ? `<div class="st-desc">${desc}<div class="small muted">${c.description_from === 'store' ? 'From the Xbox 360 Marketplace' : 'From Wikipedia'}${c.wiki ? ` · <a href="${esc(c.wiki)}" target="_blank" rel="noopener">Wikipedia</a>` : ''}</div></div>`
+          : `<p class="muted">No description${c.pending ? ' yet: the Marketplace list is still being read, try again in a minute' : ''}.</p>`}
+        ${storeShots.length ? `<h3>Screenshots</h3><div class="st-shots">${storeShots.map((u, i) => `<button onclick="storeView(${i})"><img loading="lazy" src="${u}" alt=""></button>`).join('')}</div>` : ''}
+      </div>
+      <aside class="st-side">
+        ${(c.modes || []).length ? `<h3>Play</h3><div class="kv">${c.modes.map(([k, v]) => `<div>${esc(k)}</div><div>${esc(v)}</div>`).join('')}</div>` : ''}
+        ${(c.features || []).length ? `<h3>Features</h3><div class="st-feats">${c.features.map(f => `<span>${esc(f)}</span>`).join('')}</div>` : ''}
+        ${facts.length ? `<h3>Details</h3><div class="kv">${facts.map(([k, v]) => `<div>${esc(k)}</div><div style="overflow-wrap:anywhere">${esc(v)}</div>`).join('')}</div>` : ''}
+      </aside>
+    </div>
+    <div class="st-view" id="stview" onclick="if(event.target===this)storeViewClose()"><button class="st-x" onclick="storeViewClose()">✕</button>
+      <button class="st-nav l" onclick="storeView(storeShot-1)">‹</button><img id="stvimg" alt=""><button class="st-nav r" onclick="storeView(storeShot+1)">›</button></div>
+  </div>`;
+}
+function storeView(i) {
+  const v = $('#stview');
+  if (!v || !storeShots.length) return;
+  storeShot = (i + storeShots.length) % storeShots.length;
+  $('#stvimg').src = storeShots[storeShot];
+  v.classList.add('on');
+}
+function storeViewClose() { const v = $('#stview'); if (v) v.classList.remove('on'); }
+function closeStore() { const d = $('#store'); if (d.open) d.close(); }
+document.addEventListener('keydown', ev => {
+  const d = $('#store'), v = $('#stview');
+  if (!d || !d.open || !v || !v.classList.contains('on')) return;
+  if (ev.key === 'ArrowRight') { storeView(storeShot + 1); ev.preventDefault(); }
+  else if (ev.key === 'ArrowLeft') { storeView(storeShot - 1); ev.preventDefault(); }
+  else if (ev.key === 'Escape') { storeViewClose(); ev.preventDefault(); }
+});
+// um jogo do catálogo (as ações do catálogo: descarregar, preparar, ver a tarefa)
+function openCatStore(i) {
+  const e = catShown[i];
+  if (!e) return;
+  const acts = entryActions(e).replace(/class="b s( p)?"/g, (m, p) => `class="b${p ? ' p' : ''} big"`) +
+    (e.local ? ` <button class="b big" onclick="closeStore();openGame('${esc(e.local)}')">Open in My games</button>` : '');
+  openStore({ title: e.title, xbla: e.xbla, slug: e.local || null, entry: e, acts, cover: catCover(e) });
+}
+const catCover = e => '/api/remote/cover?t=' + encodeURIComponent(e.title) + (e.local ? '&slug=' + encodeURIComponent(e.local) : '') + (e.xbla ? '&a=1' : '');
 async function xnaScan() {
   try { const j = await api('/api/xna/scan', { body: {} }); toast('Scanning for XNA games (without downloading)'); openJob(j.id); } catch (e) { fail(e); }
 }
@@ -1512,7 +1689,40 @@ async function deckBatch(mode) {
     rebuild ? 'Rebuild all' : 'Update all')) return;
   try { const j = await api('/api/deck/' + (rebuild ? 'rebuild-all' : 'update-all'), { body: {} }); openJob(j.id); } catch (e) { fail(e); }
 }
+// -- a ligação com o Deck num relance: responde?, o que espera por ele, versões do lançador e do plugin --
+let linkTimer = null;
+async function loadLink() {
+  clearTimeout(linkTimer);
+  let r;
+  try { r = await api('/api/deck/link'); } catch (e) { return; }
+  const box = $('#decklink');
+  if (!box) return;
+  const kit = r.kit || {}, pl = r.plugin || {};
+  const ago = t => t ? when(t) : '-';
+  const KIND = { deck: 'Send', 'deck-batch': 'Batch', 'deck-report': 'Report', order: 'Request', 'deck-gestor': 'Launcher',
+    'deck-plugin': 'Plugin', 'deck-flush': 'Steam shortcuts', 'deck-play': 'Play', 'deck-delete': 'Delete', 'deck-restore': 'Restore' };
+  const waits = r.jobs || [];
+  box.innerHTML = `<div class="link">
+    <div class="lk ${r.online ? 'on' : r.online === false ? 'off' : ''}">
+      <div class="dot"></div><div><b>${r.online ? 'The Deck answers' : r.online === false ? 'The Deck does not answer' : 'Checking the Deck…'}</b>
+      <div class="small muted">${r.online ? 'since ' + ago(r.since) : r.online === false ? (r.since ? 'since ' + ago(r.since) + ' · ' : '') + 'asleep, off or on another network: what needs it waits and goes on by itself when it is back' : ''}</div>
+      ${!r.online && r.detail ? `<div class="small" style="color:#ff9b94;margin-top:2px">${esc(r.detail)}</div>` : ''}</div></div>
+    <div class="lk"><div><b>${waits.length ? waits.length + ' waiting for the Deck' : 'Nothing waiting'}</b>
+      ${waits.slice(0, 4).map(j => `<div class="small"><a href="#" onclick="openJob('${j.id}');return false">${esc(KIND[j.kind] || j.kind)}: ${esc(j.title)}</a>
+        <span class="muted">${esc(j.status === 'queued' ? 'queued' : j.phase || 'running')}</span></div>`).join('')}
+      ${waits.length > 4 ? `<div class="small muted">and ${waits.length - 4} more (Jobs)</div>` : ''}
+      ${(r.add || []).length || (r.remove || []).length ? `<div class="small muted">Steam library: ${[(r.add || []).length ? (r.add.length + ' to add') : '', (r.remove || []).length ? (r.remove.length + ' to remove') : ''].filter(Boolean).join(', ')} when the Manager closes on the Deck</div>` : ''}</div></div>
+    <div class="lk"><div><b>On the Deck</b>
+      <div class="small">Launcher ${kit.on_deck ? 'v' + esc(kit.on_deck) : '<span class="muted">unknown</span>'}${kit.outdated ? ` <span class="chip warn">v${esc(kit.latest)} ready</span> <a href="#" onclick="linkUpdate('kit');return false">Update</a>` : kit.on_deck ? ' <span class="chip ok">latest</span>' : ''}</div>
+      <div class="small">Decky plugin ${pl.on_deck ? 'v' + esc(pl.on_deck) : '<span class="muted">not seen</span>'}${pl.outdated ? ` <span class="chip warn">v${esc(pl.latest)} ready</span> <a href="#" onclick="linkUpdate('plugin');return false">Update</a>` : pl.on_deck ? ' <span class="chip ok">latest</span>' : ''}</div>
+      <div class="small muted">This PC: Manager v${esc(r.running || '?')}</div></div></div></div>`;
+  if (tab === 'deck') linkTimer = setTimeout(loadLink, 20000);
+}
+async function linkUpdate(what) {
+  try { const j = await api('/api/deck/link/update', { body: { what } }); toast(j.title + ': it runs when the Deck answers'); loadLink(); } catch (e) { fail(e); }
+}
 async function loadDeck(refresh) {
+  loadLink();
   $('#deckwhen').textContent = refresh ? 'Reading the Deck over SSH...' : '';
   try {
     deckData = await api('/api/deck' + (refresh ? '?refresh=true' : ''));

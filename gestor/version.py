@@ -8,10 +8,31 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.30.2'
+VERSION = '1.31.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.31.0', '2026-11-24', [
+        "Store pages: a game opens like a page of the Xbox store, on the PC and on the Deck (and in "
+        "Sem PC mode): its background, box, genres, the players' rating and Metacritic, the "
+        "description, screenshots, play modes and details, from Microsoft's own Xbox 360 "
+        "Marketplace catalogue (no account or key) with Wikidata. Games have more than one genre "
+        "now, in the lists too.",
+        "The PC app looks new: the Deck app's colours and font, pill navigation, the catalogue in "
+        "covers (or the list), and each game's page opens with its store picture, Play and the "
+        "store page. The Steam Deck tab opens with the link at a glance: whether the Deck answers "
+        "and since when, what waits for it, and whether its launcher and Decky plugin are the "
+        "latest.",
+        "PC and Deck work better together: a game that arrives after the Manager closed joins the "
+        "library at once, and shortcuts left waiting are added when the Deck is free; opening the "
+        "Manager during a transfer no longer holds the Deck's queue for up to 2 hours; Update and "
+        "settings sent from the Deck wait for a sleeping Deck; a Deck that got a new address is "
+        "found again; Play pressed long ago no longer starts a game later; the pairing screen no "
+        "longer comes back on every launch; a retried request keeps the microSD card; the mode "
+        "switch waits long enough and says when the PC cannot reach the Deck; errors say what "
+        "happened instead of \"see the log\"; the PC and the Deck no longer restart Steam twice "
+        "for the same shortcuts.",
+    ]),
     ('1.30.2', '2026-11-24', [
         "The PC page and the Deck page reload themselves when the app updates: they went on "
         "running the old version's code until reloaded by hand, so new options (FPS Boost) did not "

@@ -32,8 +32,13 @@ couch with the controller.
 - **Your own games, as you have them:** a dump in a folder (with `default.xex`), a disc image
   (`.iso`), an archive (`.7z`, `.zip`, `.rar`) or an Xbox Live package. **Add your own game…**
   takes one; your game folders put all of theirs in the catalogue, ready to install from the Deck.
-- **A catalogue:** your game folders and the sources you add, with covers, genre, year and
-  Metacritic score; search, filters, and downloads with resume and MD5 checks.
+- **A catalogue:** your game folders and the sources you add, with covers (on the PC too, or as a
+  list), genres, year and Metacritic score; search, filters, and downloads with resume and MD5 checks.
+- **Store pages:** a game opens like a page of the Xbox store, on the PC and on the Deck: its
+  background, box, every genre the Xbox 360 Marketplace and Wikidata give it, the players' rating,
+  Metacritic, the description, screenshots, play modes (players, co-op, online) and details. From
+  Microsoft's own Xbox 360 Marketplace catalogue (no account or key), kept a month; the game page
+  on the PC opens with the same picture, Play and the store page.
 - **Build and test on the PC:** prepare, build and boot each game; captures of the native
   renderer and the classic one at the same moment, compared by a model that sees images; a second
   test with the Steam Deck's settings; the classic renderer instead of an error when the native one
@@ -51,7 +56,9 @@ couch with the controller.
   built folder, after a copy of this PC's saves (backups\pc), and the downloaded file if you tick it;
   your own dumps are never touched, and the Deck's copy stays as it is.
 - **Steam Deck:** install (internal storage or microSD), update, delete with a backup of the saves,
-  per-game settings, the Steam artwork, the library shortcuts.
+  per-game settings, the Steam artwork, the library shortcuts. The Steam Deck tab opens with the
+  link at a glance: whether the Deck answers and since when, what is waiting for it, and whether
+  its launcher and Decky plugin are the latest (Update there).
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your
   Deck games with each one's versions and fixes, the games on the PC, the catalogue (pick a game
   and it arrives in your library), requests, free space, **Play**, and reports from the Deck.

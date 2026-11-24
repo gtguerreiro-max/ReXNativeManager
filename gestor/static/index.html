@@ -8,7 +8,7 @@
 </head>
 <body>
 <header>
-  <h1><span>ReXNative</span> Manager <a href="#" id="ver" class="chip" onclick="openVersion();return false" title="Version and what changed"></a></h1>
+  <h1><small>Manager</small><span>Re</span>XNative <a href="#" id="ver" class="chip" onclick="openVersion();return false" title="Version and what changed"></a></h1>
   <nav>
     <button data-tab="games" class="on">My games</button>
     <button data-tab="catalog">Catalogue</button>
@@ -75,6 +75,7 @@
 
   <!-- Steam Deck -->
   <section class="tab" id="tab-deck">
+    <div id="decklink"></div>
     <div id="deckconn" class="panel"></div>
     <div class="row" style="margin-top:14px">
       <button class="b p" onclick="loadDeck(true)">Read the Deck now</button>
@@ -146,6 +147,7 @@
   <button class="b" onclick="closeDrawer()">Close</button></div><div class="body" id="dbody"></div></aside>
 
 <dialog id="dlg"><div id="dlgbody"></div></dialog>
+<dialog id="store"></dialog>
 <script src="/static/rexlog.js"></script>
 <script src="/static/app.js"></script>
 </body>

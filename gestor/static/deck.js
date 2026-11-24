@@ -428,6 +428,10 @@ async function refreshHome(readDeck, manual) {
     if (e.message === 'emparelhar') return;
     S.online = false;
     status();
+    if (!/No connection|did not answer/.test(e.message) && S.homeErr !== e.message) {
+      S.homeErr = e.message;
+      toast(e.message, true);
+    }
   }
 }
 function notifyOrders(prev, h) {
@@ -1473,6 +1477,15 @@ function openGenres() {
 }
 function setGenre(g) { S.f.genre = g; closeLayer(); refilter('Genre'); }
 function catGame(key) { return (S.cat || []).find(g => g.key === key); }
+// A ficha do jogo como a da loja: o que o catálogo já sabe logo, o resto (o fundo, a descrição, as
+// capturas, a nota dos jogadores, os modos de jogo) quando a ficha chega do PC (market.py: o
+// Marketplace da Xbox 360 e a Wikidata). Sem ela (Sem PC, ou sem rede) fica a ficha simples.
+const mktImg = (tid, n) => `/api/remote/market/img/${encodeURIComponent(tid)}/${encodeURIComponent(n)}`;
+function starsHtml(r) {
+  if (r == null) return '';
+  const n = Math.round(r * 2) / 2, full = Math.floor(n), half = n - full ? 1 : 0;
+  return `<span class="stars">${'★'.repeat(full)}${half ? '<span class="half">★</span>' : ''}<span class="off">${'★'.repeat(5 - full - half)}</span></span>`;
+}
 function openCatGame(key) {
   const g = catGame(key);
   if (!g) return;
@@ -1480,20 +1493,79 @@ function openCatGame(key) {
   const state = g.on_deck ? 'Already on your Deck.' : order ? `Request in progress: ${stageText(order)}`
     : g.built ? (isLocal() ? 'Already built on this Deck: it installs straight away.' : 'Already built on the PC: it goes straight to the Deck.') : '';
   const slug = g.art ? g.local : null;
-  openLayer(`<div class="sheet detail">
-    <div class="big">${img(g.title, slug, g.xbla)}</div>
-    <div class="grow">
-      <h3>${esc(g.title)}</h3>
-      <div class="meta">${(g.genres || []).length ? `<span>${esc(g.genres.join(', '))}</span>` : ''}${g.year ? `<span>${g.year}</span>` : ''}
-        ${g.mc ? `<span>Metacritic <b>${g.mc}</b></span>` : ''}<span>${g.xbla ? 'Arcade (XBLA)' : 'Disc'}</span></div>
-      <div class="facts"><span>${g.own ? 'Size' : 'Download'}</span><b>${gb(g.size)}</b><span>Source</span><b>${esc(g.own ? 'Your files (' + g.own + ')' : g.source)}</b><span>${g.own ? 'On ' + side() : 'File'}</span><b style="font-weight:500;font-size:14px;overflow-wrap:anywhere">${esc(g.name)}</b></div>
-      ${state ? `<div class="note" style="color:var(--text)">${esc(state)}</div>` : ''}
-      <div class="acts">
-        ${order ? `<button class="btn p f" onclick="closeLayer();switchTab('orders')">View the request</button>`
-          : `<button class="btn p f" data-hint="Install" onclick="confirmOrder(${JSON.stringify(g.key).replace(/"/g, '&quot;')})">${g.on_deck ? 'Install again' : 'Install on the Deck'}</button>`}
-        <button class="btn f" onclick="closeLayer()">Close</button>
+  const k = JSON.stringify(g.key).replace(/"/g, '&quot;');
+  const layer = openLayer(`<div class="sheet store">
+    <div class="sthero" id="sthero"><div class="sthin">
+      <div class="stbox">${img(g.title, slug, g.xbla)}</div>
+      <div class="sthead">
+        <div class="stkick">${g.xbla ? 'Xbox Live Arcade' : 'Xbox 360'}</div>
+        <h3>${esc(g.title)}</h3>
+        <div class="stby" id="stby">${g.year || ''}</div>
+        <div class="stgen" id="stgen">${(g.genres || []).map(x => `<span>${esc(x)}</span>`).join('')}</div>
+        <div class="stscore" id="stscore">${g.mc ? `<span class="mcs ${g.mc >= 75 ? 'h' : g.mc >= 50 ? 'm' : 'l'}">${g.mc}</span> Metacritic` : ''}</div>
+        <div class="acts">
+          ${order ? `<button class="btn p f" onclick="closeLayer();switchTab('orders')">View the request</button>`
+            : `<button class="btn p f" data-hint="Install" onclick="confirmOrder(${k})">${g.on_deck ? 'Install again' : 'Install on the Deck'}</button>`}
+          <button class="btn f" onclick="closeLayer()">Close</button>
+        </div>
+        ${state ? `<div class="note">${esc(state)}</div>` : ''}
+      </div></div></div>
+    <div class="stbody">
+      <div class="stmain">
+        <div id="stdesc" class="stdesc"><span class="dim">Reading the game's page…</span></div>
+        <div id="stshots"></div>
+      </div>
+      <div class="stside">
+        <div id="stplay"></div>
+        <h4>Details</h4>
+        <div class="facts" id="stfacts"><span>${g.own ? 'Size' : 'Download'}</span><b>${gb(g.size)}</b>
+          <span>Source</span><b>${esc(g.own ? 'Your files (' + g.own + ')' : g.source)}</b>
+          <span>${g.own ? 'On ' + side() : 'File'}</span><b style="font-weight:500;font-size:14px;overflow-wrap:anywhere">${esc(g.name)}</b></div>
       </div>
     </div></div>`);
+  const q = new URLSearchParams({ title: g.title, xbla: g.xbla ? 1 : 0 });
+  if (g.local) q.set('slug', g.local);
+  api('/api/remote/card?' + q, { timeout: 30000 }).then(c => fillStore(layer, g, c)).catch(() => {
+    const d = $('#stdesc', layer.el);
+    if (d) d.innerHTML = '';
+  });
+}
+function fillStore(layer, g, c) {
+  if (!S.layers.includes(layer)) return;
+  const el = layer.el, im = c.images || {};
+  if (c.tid && im.background) $('#sthero', el).style.setProperty('--hero', `url('${mktImg(c.tid, im.background)}')`);
+  const by = [(c.publishers || [])[0], (c.developers || [])[0] !== (c.publishers || [])[0] ? (c.developers || [])[0] : null, c.year || g.year].filter(Boolean);
+  $('#stby', el).textContent = by.join(' · ');
+  if ((c.genres || []).length) $('#stgen', el).innerHTML = c.genres.map(x => `<span>${esc(x)}</span>`).join('');
+  const mc = c.mc || g.mc;
+  $('#stscore', el).innerHTML = (c.rating != null ? `<span>${starsHtml(c.rating)} <b>${c.rating.toFixed(1)}</b> <span class="dim">· ${c.ratings.toLocaleString()} ratings</span></span>` : '') +
+    (mc ? `<span><span class="mcs ${mc >= 75 ? 'h' : mc >= 50 ? 'm' : 'l'}">${mc}</span> Metacritic</span>` : '');
+  const desc = (c.description || '').split(/\n{2,}/).map(p => `<p>${esc(p.trim())}</p>`).join('');
+  $('#stdesc', el).innerHTML = desc ? desc + `<div class="stsrc">${c.description_from === 'store' ? 'From the Xbox 360 Marketplace' : 'From Wikipedia'}</div>` : '';
+  const shots = (c.screens || []).map(n => mktImg(c.tid, n));
+  layer.shots = shots;
+  if (shots.length) $('#stshots', el).innerHTML = `<h4>Screenshots</h4><div class="stshots">${shots.map((u, i) =>
+    `<button class="f th" data-hint="View" onclick="viewShot(${i})"><img loading="lazy" src="${u}" alt=""></button>`).join('')}</div>`;
+  const play = (c.modes || []).map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join('');
+  $('#stplay', el).innerHTML = (play ? `<h4>Play</h4><div class="facts">${play}</div>` : '') +
+    ((c.features || []).length ? `<div class="stfeat">${c.features.map(f => `<span>${esc(f)}</span>`).join('')}</div>` : '');
+  const extra = [];
+  if ((c.developers || []).length) extra.push(['Developer', c.developers.join(', ')]);
+  if ((c.publishers || []).length) extra.push(['Publisher', c.publishers.join(', ')]);
+  if (c.released) extra.push(['Released', new Date(c.released + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })]);
+  $('#stfacts', el).insertAdjacentHTML('afterbegin', extra.map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join(''));
+}
+function viewShot(i) {
+  const l = S.layers[S.layers.length - 1];
+  const shots = (l && l.shots) || [];
+  if (!shots.length) return;
+  const n = shots.length, at = (i + n) % n;
+  const v = openLayer(`<div class="shotview"><img src="${shots[at]}" alt="">
+    <div class="acts"><button class="btn f" data-hint="Previous" onclick="closeLayer();viewShot(${at - 1})">◀</button>
+      <span class="dim">${at + 1} of ${n}</span>
+      <button class="btn f" data-hint="Next" onclick="closeLayer();viewShot(${at + 1})">▶</button>
+      <button class="btn f" onclick="closeLayer()">Close</button></div></div>`, { focus: '.btn:nth-of-type(2)' });
+  v.shots = shots;
 }
 function confirmOrder(key) {
   const g = catGame(key);
@@ -1924,7 +1996,7 @@ async function deckReady() {
   } catch (e) { return false; } finally { clearTimeout(t); }
 }
 async function loadMode() {
-  const [m, ready] = await Promise.all([api('/api/remote/mode').catch(e => ({ error: e.message })), deckReady()]);
+  const [m, ready] = await Promise.all([api('/api/remote/mode', { timeout: 40000 }).catch(e => ({ error: e.message })), deckReady()]);
   S.modes = { mode: m.mode, serving: m.serving, error: m.error || null, ready };
   if (S.tab !== 'settings' || S.layers.length) return;
   const id = S.cur && S.cur.dataset.id;
@@ -1961,7 +2033,7 @@ async function setMode(k) {
   if (k === m.mode && k === m.serving) { toast(name + ' is already in use'); return; }
   S.modeBusy = true;
   try {
-    const r = await api('/api/remote/mode', { body: { mode: k } });
+    const r = await api('/api/remote/mode', { body: { mode: k }, timeout: 40000 });
     S.modes = Object.assign({}, m, { mode: r.mode || k, serving: r.serving || m.serving, error: null });
     if (r.relaunch) {
       // The launcher (gestor.sh) closes this window and opens the Manager again on the other side,
@@ -2298,6 +2370,9 @@ async function boot() {
   try { st = await api('/api/pair/state'); } catch (e) { setTimeout(boot, 3000); return; }
   // Sem PC não há nada a emparelhar (o serviço do Deck só aceita este Deck).
   if (!st.paired && !isLocal()) { showPair(); requestAnimationFrame(padLoop); return; }
+  // Paired (the cookie of a code pairing) although the launcher's old token was refused above:
+  // the pairing screen that refusal opened goes, or every launch stopped on it.
+  if (S.tab === 'pair') { S.tab = null; $('#v-pair').classList.add('hide'); }
   $('#top').classList.remove('hide');
   $('#v-boot').classList.add('hide');
   await refreshHome();

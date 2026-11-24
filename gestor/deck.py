@@ -208,8 +208,17 @@ class Deck:
         except SystemExit as e:
             raise RuntimeError('The Deck is not set up: %s (Settings)' % e)
         self.rex = rex
+        self.host = cfg['deck_host']
+
+    def _current(self):
+        """The Deck's address as the settings say now: a job waiting for the Deck since before its
+        address changed (the watcher follows a Deck that got another one) uses the new one."""
+        host = config.load()['deck_host']
+        if host != self.host:
+            self.__init__()
 
     def ssh(self, command, input_text=None, timeout=120, input_bytes=None):
+        self._current()
         # O stdin vai em bytes com \n: em modo texto o Windows escreveria \r\n e o bash do Deck
         # recusa um script assim (o Python aceita-o, por isso a lista funcionava).
         data = (input_text.replace('\r\n', '\n').encode('utf-8') if input_text is not None
@@ -380,11 +389,21 @@ def _set_pending(p):
     state.update('deck', 'pending', {'add': p['add'], 'remove': p['remove']})
 
 
+# Called after a game joins the queue of shortcuts (app.py: the library is updated at once when
+# the Manager is already closed on the Deck; before, it waited for the next time it closed).
+ON_QUEUED = []
+
+
 def queue_add(slug, title):
     with _pending_lock:
         p = pending()
         p['add'][slug] = {'title': title, 'at': jobs.now()}
         _set_pending(p)
+    for fn in ON_QUEUED:
+        try:
+            fn()
+        except Exception:  # noqa: BLE001 - the shortcut stays queued for the next flush
+            pass
 
 
 def queue_remove(name, appid, slug=None):
@@ -580,7 +599,8 @@ def _deck_error(out, rc):
     lines = [l for l in out.splitlines() if l.startswith('the Deck:')]
     if lines:
         return 'rexnative deck failed: %s' % lines[-1][:300]
-    return 'rexnative deck failed (exit code %d): see the log' % rc
+    tail = [l.strip() for l in out.splitlines() if l.strip() and not l.startswith(('copied ', '['))][-2:]
+    return 'rexnative deck failed (exit code %d)%s' % (rc, (': ' + ' / '.join(tail))[:400] if tail else ': see the log')
 
 
 def _supports(cfg, flag):
@@ -639,6 +659,10 @@ def install_job(job, work, root=None, steam=True, try_seconds=None, force_settin
         cmd += ['--root', root]
     if steam:
         cmd.append('--steam')
+        # Busy when the copy ends (the Manager opened meanwhile, which counts as in use): the
+        # shortcut waits for the Manager to close instead of the deck lane waiting 2 h.
+        if _supports(cfg, '--busy-wait'):
+            cmd += ['--busy-wait', '2']
     if try_seconds:
         cmd += ['--try', str(int(try_seconds))]
     # Instalar pela app é escolha do utilizador: também um jogo que ele tinha apagado do Deck.
@@ -656,10 +680,11 @@ def install_job(job, work, root=None, steam=True, try_seconds=None, force_settin
             break
         out = _log_since(job.log_path, start)
         if 'no shortcut added' in out and steam:
-            # ReXNative 5226a5a: um jogo começou no Deck enquanto isto se preparava para fechar o Steam.
-            # Os ficheiros estão lá; o atalho fica à espera, como com o Gestor aberto.
-            job.event('info', 'A game started on the Deck: the game is there and joins the library when '
-                              'the Deck is free (Steam was not closed)')
+            # ReXNative 5226a5a: um jogo começou no Deck (ou o Gestor abriu) enquanto isto se preparava
+            # para fechar o Steam. Os ficheiros estão lá; o atalho fica à espera, como com o Gestor aberto.
+            job.event('info', 'The Deck was in use when the copy ended (a game or the Manager open): the '
+                              'game is there and joins the library when the Deck is free (Steam was not '
+                              'closed)')
             defer, try_seconds = True, 0
             break
         m = BROKE_RE.search(out)
@@ -938,9 +963,13 @@ def restore_job(job, slug, file):
 # -- relatórios a partir do Deck: o que o Deck sabe do jogo, e uma captura lá ------------------------
 # -- jogar ------------------------------------------------------------------------------------------
 @exclusive
-def play_job(job, appid, title):
+def play_job(job, appid, title, asked_at=None):
     """Arranca um jogo pelo Steam do Deck, depois de o Gestor fechar (e de o Steam voltar, se a
-    biblioteca acabou de ser atualizada)."""
+    biblioteca acabou de ser atualizada). Um Jogar com mais de 5 minutos (outras tarefas do Deck
+    passaram à frente) já não arranca: um jogo a abrir sozinho mais tarde seria uma surpresa."""
+    if asked_at and time.time() - asked_at > 300:
+        raise RuntimeError('Play was pressed %d minutes ago and other work on the Deck went first: %s '
+                           'was not started now (press Play again)' % ((time.time() - asked_at) // 60, title))
     dk = Deck()
     gid = gestor_appid()
     t0 = time.time()
