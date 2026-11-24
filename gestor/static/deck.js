@@ -1271,7 +1271,7 @@ async function openSettings(slug) {
     rows.push({ id: 'language', group: 'Game', label: 'Language', opts, start: Math.max(0, opts.findIndex(o => o[1] === now)),
       hint: 'The languages this game is made in. Português (Brasil) is Brazil\'s; the game starts in the one you pick.' });
   }
-  for (const s of settingsFor('deck')) {
+  for (const s of settingsFor('deck', eff)) {
     const opts = s.choices.slice();
     let i = settingIndex(s, eff);
     if (i < 0) { opts.unshift([Object.keys(s.def).length ? 'As it is' : 'The game\'s', null]); i = 0; }

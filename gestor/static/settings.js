@@ -37,7 +37,9 @@ const GAME_SETTINGS = [
     hint: 'The window\'s size on the desktop, when the game is not full screen.' },
   { id: 'resolution', group: 'Picture', label: 'Resolution', where: 'pc', def: { 'rexnative.resolution_scale': 1 },
     choices: [['1x (the game\'s)', { 'rexnative.resolution_scale': 1 }], ['2x', { 'rexnative.resolution_scale': 2 }], ['3x', { 'rexnative.resolution_scale': 3 }]],
-    hint: 'The game drawn at 2x or 3x its resolution, as the Xbox One X and Series do: sharper, heavier on the GPU. After a restart.' },
+    // On the Deck only when the game has 2x or 3x from the PC's settings, to take it back.
+    deckIf: e => Number(e['rexnative.resolution_scale']) > 1,
+    hint: 'The game drawn at 2x or 3x its resolution, as the Xbox One X and Series do: sharper, heavier on the GPU. After a restart. On the Steam Deck: 1x.' },
   { id: 'antialiasing', group: 'Picture', label: 'Antialiasing', where: 'both', def: { 'rexnative.upscaler': false, 'rexnative.msaa': 2 },
     choices: [['Off', { 'rexnative.upscaler': false, 'rexnative.msaa': 1 }], ['MSAA 2x (console)', { 'rexnative.upscaler': false, 'rexnative.msaa': 2 }],
               ['MSAA 4x', { 'rexnative.upscaler': false, 'rexnative.msaa': 4 }], ['MSAA 8x', { 'rexnative.upscaler': false, 'rexnative.msaa': 8 }],
@@ -55,7 +57,8 @@ const GAME_SETTINGS = [
     hint: 'Anisotropic filtering: sharper ground seen at grazing angles. At the next start.' },
   { id: 'upscaler_backend', group: 'Upscaler', label: 'Upscaler type', where: 'pc', def: { 'rexnative.upscaler_backend': 'auto' },
     choices: [['Automatic', { 'rexnative.upscaler_backend': 'auto' }], ['NVIDIA DLSS', { 'rexnative.upscaler_backend': 'dlss' }], ['AMD FSR', { 'rexnative.upscaler_backend': 'fsr' }]],
-    hint: 'Automatic: DLSS on an NVIDIA RTX GPU, FSR on the others. FSR runs on every GPU.' },
+    deckIf: e => e['rexnative.upscaler_backend'] === 'dlss',
+    hint: 'Automatic: DLSS on an NVIDIA RTX GPU, FSR on the others. FSR runs on every GPU (the Steam Deck: Automatic).' },
   { id: 'fsr_version', group: 'Upscaler', label: 'FSR version', where: 'both', def: { 'rexnative.fsr_version': 'auto' },
     choices: [['Newest', { 'rexnative.fsr_version': 'auto' }], ['FSR 4', { 'rexnative.fsr_version': '4' }], ['FSR 3.1', { 'rexnative.fsr_version': '3' }]],
     hint: 'FSR 4 (AI, sharper) needs an AMD GPU and AMD\'s driver library (on the Steam Deck, GE-Proton fetches it); FSR 3.1 is lighter and runs everywhere.' },
@@ -70,7 +73,8 @@ const GAME_SETTINGS = [
     hint: 'A generated frame before each of the game\'s: twice the frames shown, the game at half the screen\'s rate (30 for 60 on the Steam Deck). Needs the upscaler.' },
   { id: 'dlss5', group: 'DLSS 5', label: 'DLSS 5 neural rendering', where: 'pc', def: { 'rexnative.dlss5': false },
     choices: [['Off', { 'rexnative.dlss5': false }], ['On', { 'rexnative.dlss5': true }]],
-    hint: 'NVIDIA DLSS 5 on the scene (an RTX GPU), with the upscaler on.' },
+    deckIf: e => String(e['rexnative.dlss5']) === 'true',
+    hint: 'NVIDIA DLSS 5 on the scene (an RTX GPU), with the upscaler on. Off on the Steam Deck.' },
   { id: 'dlss5_look', group: 'DLSS 5', label: 'DLSS 5 look', where: 'pc', def: { 'rexnative.dlss5_look': 'cinematic' },
     choices: [['Cinematic', { 'rexnative.dlss5_look': 'cinematic' }], ['Cinematic, 2 passes', { 'rexnative.dlss5_look': 'cinematic2' }],
               ['Natural', { 'rexnative.dlss5_look': 'natural' }], ['Stylized', { 'rexnative.dlss5_look': 'stylized' }],
@@ -96,9 +100,11 @@ const GAME_SETTINGS = [
     hint: 'How much the game writes to its log: Info normally, Debug for a bug report.' },
 ];
 
-// The rows for the PC's file ('pc') or the Deck's ('deck').
-function settingsFor(target) {
-  return GAME_SETTINGS.filter(s => s.where === 'both' || s.where === target);
+// The rows for the PC's file ('pc') or the Deck's ('deck'): on the Deck, a PC's row too where the
+// game has a PC's value there (deckIf; every one of them when eff is not given).
+function settingsFor(target, eff) {
+  return GAME_SETTINGS.filter(s => s.where === 'both' || s.where === target ||
+    (target === 'deck' && s.deckIf && (!eff || s.deckIf(Object.assign({}, s.def, eff)))));
 }
 // Every key a row writes.
 function settingKeys(s) {
