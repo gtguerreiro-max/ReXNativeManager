@@ -954,8 +954,8 @@ async function loadLangButton(slug) {
   try { r = await api('/api/remote/language/' + encodeURIComponent(slug), { timeout: 20000 }); } catch (e) { return; }
   const el = $('#langbtn');
   if (!el || (r.languages || []).length < 2) return;
-  const now = r.deck || r.pc || 1;
-  const name = ((r.languages || []).find(l => l.id === now) || {}).name || 'English';
+  const now = r.deck || r.pc || '1';
+  const name = ((r.languages || []).find(l => l.key === now) || {}).name || 'English';
   el.innerHTML = `<button class="btn f" data-hint="Change" onclick="openLanguages('${esc(slug)}')">Language: ${esc(name)}</button>`;
   S.langs = S.langs || {};
   S.langs[slug] = r;
@@ -963,17 +963,17 @@ async function loadLangButton(slug) {
 function openLanguages(slug) {
   const r = (S.langs || {})[slug];
   if (!r) return;
-  const now = r.deck || r.pc || 1;
+  const now = r.deck || r.pc || '1';
   openLayer(`<div class="sheet confirm" style="width:640px"><h3>Play in which language?</h3>
     <p>The languages this game is made in. It starts in the one you pick${isLocal() ? '' : ', on the Deck and on the PC'}.</p>
-    <div class="langs">${r.languages.map(l => `<button class="btn f ${l.id === now ? 'p' : ''}" onclick="pickLanguage('${esc(slug)}', ${l.id})">${esc(l.name)}</button>`).join('')}</div>
+    <div class="langs">${r.languages.map(l => `<button class="btn f ${l.key === now ? 'p' : ''}" onclick="pickLanguage('${esc(slug)}', '${esc(l.key)}')">${esc(l.name)}</button>`).join('')}</div>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button></div></div>`, { focus: '.langs .btn.p' });
 }
 async function pickLanguage(slug, id) {
   try {
     const r = await api('/api/remote/language/' + encodeURIComponent(slug), { body: { lang: id }, timeout: 30000 });
     S.langs[slug] = r;
-    const name = ((r.languages || []).find(l => l.id === id) || {}).name || '';
+    const name = ((r.languages || []).find(l => l.key === id) || {}).name || '';
     closeLayer();
     toast(isLocal() || !r.job ? `${name}: the game starts in ${name} next time`
       : `${name}: the game's settings go to the Deck now; it starts in ${name} next time`);

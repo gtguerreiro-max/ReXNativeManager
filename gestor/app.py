@@ -1863,8 +1863,7 @@ def _card(title, slug=None, xbla=None):
     c = market.card(title, tid=tid, xbla=None if xbla is None else bool(xbla))
     c['slug'] = slug
     c['achievements'] = None
-    c['languages'] = [achievements.LANGUAGES[i] for i in achievements.languages(games.find(slug))] \
-        if slug and games.find(slug) else []
+    c['languages'] = [x['name'] for x in achievements.choices(games.find(slug))] if slug and games.find(slug) else []
     if slug and games.find(slug):
         try:
             c['achievements'] = achievements.summary(games.find(slug), slug)
@@ -2119,29 +2118,40 @@ DECK_QUICK = ['rexnative.classic', 'rexnative.upscaler', 'rexnative.upscaler_mod
 
 
 # -- a língua do jogo: kernel.user_language do SDK (o XGetLanguage do jogo), por jogo -----------------
-def _language_state(w):
-    """As línguas do jogo (do SPA) e a escolhida no PC e no Deck (None: a de origem, inglês)."""
+def _kernel_of(path):
     import tomllib
+    try:
+        return tomllib.loads(games.read_text(path)).get('kernel') or {}
+    except (tomllib.TOMLDecodeError, OSError):
+        return {}
+
+
+def _language_state(w):
+    """As línguas do jogo (do SPA e dos dados; o português como o de Portugal ou o do Brasil) e a
+    escolhida no PC e no Deck ('1', '4', '9-pt', '9-br'; None: a de origem, inglês)."""
+    ch = achievements.choices(w)
     cur = {}
     for where, path in games.settings_files(w).items():
-        try:
-            v = (tomllib.loads(games.read_text(path)).get('kernel') or {}).get('user_language')
-        except (tomllib.TOMLDecodeError, OSError):
-            v = None
-        cur[where] = v if isinstance(v, int) else None
-    ids = achievements.languages(w)
-    return {'languages': [{'id': i, 'name': achievements.LANGUAGES[i]} for i in ids],
-            'pc': cur.get('pc'), 'deck': cur.get('deck')}
+        k = _kernel_of(path)
+        cur[where] = achievements.choice_key(k.get('user_language'), k.get('user_country'), ch)
+    return {'languages': ch, 'pc': cur.get('pc'), 'deck': cur.get('deck')}
 
 
 def _set_language(slug, lang):
     """A língua escolhida, no PC e no Deck (as definições dos dois). No Deck vai já, com as definições
     (as que o HUD do Deck mudou dão lugar às do PC), quando ele responder."""
+    import re
     w = _work(slug)
-    lang = int(lang) if lang not in (None, '', 0, '0') else None
-    if lang is not None and lang not in achievements.LANGUAGES:
-        raise HTTPException(400, 'unknown language %s' % lang)
-    value = None if lang in (None, 1) else lang
+    m = re.fullmatch(r'(\d{1,2})(?:-(pt|br))?', str(lang if lang not in (None, '', 0) else 1).strip())
+    if not m or int(m.group(1)) not in achievements.LANGUAGES:
+        raise HTTPException(400, 'unknown language %s' % str(lang)[:20])
+    lang, variant = int(m.group(1)), m.group(2)
+    if lang == 9 and not variant:
+        only = [c for c in achievements.choices(w) if c['id'] == 9 and c['country']]
+        variant = only[0]['key'][2:] if len(only) == 1 else None
+    # Portugal's or Brazil's Portuguese: the console's country too (a title with both picks by it).
+    country = achievements.PT_COUNTRY.get(variant) if lang == 9 else None
+    value = None if lang in (0, 1) else lang
     files = games.settings_files(w)
     pc_toml = os.path.exists(files.get('pc') or '')
     for where, path in files.items():
@@ -2149,7 +2159,10 @@ def _set_language(slug, lang):
         # when it is there (it may hold an older choice), or when the game has no PC settings yet.
         if not os.path.exists(path) and (where == 'pc' or pc_toml or value is None):
             continue
-        text = games.apply_values(games.read_text(path), {'kernel.user_language': value})
+        vals = {'kernel.user_language': value}
+        if country is not None or _kernel_of(path).get('user_country') in achievements.PT_COUNTRY.values():
+            vals['kernel.user_country'] = country
+        text = games.apply_values(games.read_text(path), vals)
         err = games.validate_toml(text)
         if err:
             raise HTTPException(400, 'invalid TOML: %s' % err)

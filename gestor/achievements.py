@@ -316,47 +316,66 @@ def _ts(iso):
 LANGUAGES = {1: 'English', 2: '日本語', 3: 'Deutsch', 4: 'Français', 5: 'Español', 6: 'Italiano',
              7: '한국어', 8: '繁體中文', 9: 'Português', 10: '简体中文', 11: 'Polski', 12: 'Русский',
              13: 'Svenska', 14: 'Türkçe', 15: 'Norsk', 16: 'Nederlands', 17: '简体中文'}
-_langs = {}  # work -> (mtime of image.bin, [ids])
+_langs = {}  # work -> (mtime of image.bin, [ids], [Portuguese variants])
 
 
 def languages(work):
     """The languages the game plays in (XLanguage ids, English first), [] when the game has no
     image yet: those its SPA has texts in (a title localises its achievements into the languages
     it is made in) that its data carries (data_languages), English always."""
+    return _scan(work)[0]
+
+
+def choices(work):
+    """The languages to offer: [{key, id, country, name}], Portuguese as Portugal's or Brazil's
+    (its texts or its data's packs say which; both when the data has both)."""
+    return _choices(*_scan(work))
+
+
+def _scan(work):
     img = os.path.join(work, 'run', 'image.bin')
     try:
         mtime = os.path.getmtime(img)
     except OSError:
-        return []
+        return [], []
     hit = _langs.get(work)
     if hit and hit[0] == mtime:
-        return hit[1]
+        return hit[1], hit[2]
     try:
         b = open(img, 'rb').read()
     except OSError:
-        return []
-    best = []
+        return [], []
+    best, texts = [], {}
     for _, entries in _xdbf_blocks(b):
         ids = sorted(eid for (sec, eid) in entries if sec == SEC_STRING and eid in LANGUAGES)
         if len(ids) > len(best):
             best = ids
+        loc = entries.get((SEC_STRING, 9))
+        strings = _strings(b, loc) if loc else {}
+        if len(strings) > len(texts):
+            texts = strings
     # 10 is the SDK's old simplified Chinese id, kept beside 17: one entry.
     if 10 in best and 17 in best:
         best.remove(10)
     game = os.path.join(work, 'run', 'game')
-    data = data_languages(game) if os.path.isdir(game) else None
+    packs = set()
+    data = data_languages(game, portuguese=packs) if os.path.isdir(game) else None
     if data is not None:
         best = [i for i in best if i in data or i == 1]
-    _langs[work] = (mtime, best)
-    return best
+    variants = []
+    if 9 in best:
+        v = portuguese_variant(texts.values())
+        variants = sorted(packs, reverse=True) if data is not None and packs else ([v] if v else [])
+    _langs[work] = (mtime, best, variants)
+    return best, variants
 
 # -- the languages the game's data carries ----------------------------------------------------------
 # A title's SPA lists every language the title was made in, across its regions; a disc can carry
 # fewer (Diablo III's European disc: enGB and frFR packs only; Burnout Crash's: EN-US.LANG and
 # FR-FR.LANG), and a language it lacks plays in English. Files and folders named by locale, as
 # siblings that differ only in it (enGB_Act1.cpk, frFR_Act1.cpk; data/language/pl-pl), say which:
-# speech, Kinect grammars, voices and subtitles left out (Forza Horizon's SatNav voices, Babel
-# Rising's Kinect grammars are not its text).
+# speech, Kinect grammars, voices, subtitles and fonts left out (Forza Horizon's SatNav voices, Babel
+# Rising's Kinect grammars, Super Meat Boy's Chinese.fnt are not its text).
 _LOCALE_PAIRS = {
     'en': 'US GB UK AU CA IE NZ', 'fr': 'FR CA BE CH', 'de': 'DE AT CH', 'es': 'ES MX AR CL CO',
     'it': 'IT CH', 'pt': 'PT BR', 'ja': 'JP', 'ko': 'KR', 'zh': 'TW HK CN SG CHT CHS HANT HANS', 'pl': 'PL', 'ru': 'RU',
@@ -372,7 +391,7 @@ _LOCALE_WORDS = {'english': [1], 'japanese': [2], 'german': [3], 'deutsch': [3],
 _LOCALE_TOKEN = re.compile(r'(?<![A-Za-z])([A-Za-z]{2})([-_]?)([A-Za-z]{2}|cht|chs|hant|hans)(?![A-Za-z])',
                            re.I)
 _LOCALE_WORD = re.compile(r'(?i)(?<![A-Za-z])(%s)(?![A-Za-z])' % '|'.join(_LOCALE_WORDS))
-_NOT_TEXT = re.compile(r'(?i)speech|kinect|grammar|satnav|voice|audio|sound|sfx|music|movie|video|subt'
+_NOT_TEXT = re.compile(r'(?i)speech|kinect|grammar|satnav|voice|audio|sound|sfx|music|movie|video|subt|font'
                        r'|(?<![a-z])vo(?![a-z])')
 
 
@@ -391,15 +410,17 @@ def _locales_in(name):
             ids = [8]
         else:
             ids = _LOCALE_IDS.get(lang.lower(), [])
-        out.append((lang.lower(), ids, m.span()))
+        key = lang.lower() + ('-' + country.lower() if lang.lower() == 'pt' else '')
+        out.append((key, ids, m.span()))
     for m in _LOCALE_WORD.finditer(name):
         out.append((m.group(1).lower(), _LOCALE_WORDS[m.group(1).lower()], m.span()))
     return out
 
 
-def data_languages(game_dir, limit=40000):
+def data_languages(game_dir, limit=40000, portuguese=None):
     """The XLanguage ids of the language packs in a game's data (its folder of files), or None
-    when its names show no set of them (one language alone says nothing)."""
+    when its names show no set of them (one language alone says nothing). `portuguese`, a set,
+    gets the Portuguese packs' 'pt' (pt-PT) and 'br' (pt-BR, Brazilian)."""
     groups = {}
     seen = 0
     for dp, dn, fn in os.walk(game_dir):
@@ -422,6 +443,96 @@ def data_languages(game_dir, limit=40000):
         return None
     out = set()
     for g in groups.values():
-        for ids in g.values():
+        for key, ids in g.items():
             out.update(ids)
+            if portuguese is not None and key in ('pt-pt', 'pt-br', 'brazilian'):
+                portuguese.add('br' if key in ('pt-br', 'brazilian') else 'pt')
     return out
+
+# -- Portuguese: Portugal's or Brazil's -------------------------------------------------------------
+# XLanguage 9 is one Portuguese; a title's texts are Portugal's (tu: "Completa o nível", "prepara-te",
+# "A jogar", ecrã, equipa, prémio) or Brazil's (você: "Conclua", "Recupere sua carne", tela, equipe,
+# prêmio). The game's own Portuguese texts (its SPA's) say which, and the country the console is
+# set to follows it (Portugal 84, Brazil 13: a title with both picks by it).
+_PT_WORDS = set('''ecrã ecrãs equipa equipas utilizador utilizadores utilizar registo registos contacto contactos
+facto factos acção acções selecção seleccionar seleccione seleccionado objectivo objectivos activar activo activa
+actual actualizar óptimo óptima director sector comboio autocarro telemóvel guarda-redes golo golos relvado
+rapariga raparigas miúdo miúdos prémio prémios bónus género ténis económico fenómeno anónimo quilómetro
+quilómetros polémico atómico electrónico electrónicos estás tens consegues podes és fizeste ganhaste conseguiste
+mataste derrotaste completaste apanhaste encontraste terminaste chegaste sobreviveste venceste salvaste jogaste
+usaste recolheste descobriste conseguires sejas tua tuas teu teus apanhar colecciona coleccionar'''.split())
+_BR_WORDS = set('''tela telas equipe equipes usuário usuários registro registros contato contatos você vocês
+trem ônibus celular goleiro gramado garota garotas moleque prêmio prêmios bônus gênero tênis econômico fenômeno
+anônimo quilômetro quilômetros polêmico atômico eletrônico eletrônicos pegar pegue pegou'''.split())
+# The command that opens an achievement's text: tu's (Portugal) or você's (Brazil, or Portugal formal).
+_PT_IMPERATIVE = set('''completa conclui derrota mata vence ganha encontra joga usa utiliza cria termina recolhe
+colecciona coleciona apanha destrói desbloqueia alcança consegue sobrevive salva chega obtém faz acende recupera
+esmaga causa atinge marca elimina abre compra liberta descobre acaba vai sê joga destrói'''.split())
+_BR_IMPERATIVE = set('''complete conclua derrote mate vença ganhe encontre jogue use utilize crie termine recolha
+colecione desbloqueie alcance consiga sobreviva salve chegue obtenha faça acenda recupere esmague cause atinja
+marque elimine abra compre liberte descubra acabe vá seja'''.split())
+_ARTICLE = set('a o as os da do das dos na no nas nos pela pelo pelas pelos à ao às aos uma um'.split())
+
+
+def portuguese_variant(texts):
+    """'pt' (Portugal's), 'br' (Brazil's) or None, from a title's Portuguese texts."""
+    pt = br = 0.0
+    for text in texts:
+        t = text.lower()
+        words = re.findall(r"[a-zà-ÿ]+(?:-[a-zà-ÿ]+)*", t)
+        for i, w in enumerate(words):
+            if w in _PT_WORDS:
+                pt += 2
+            elif w in _BR_WORDS:
+                br += 2
+            if re.fullmatch(r'[a-zà-ÿ]{3,}-(?:te|se|lo|la|los|las|me|nos|lhe|lhes)', w):
+                pt += 1  # enclisis, prepara-te: Portugal's
+            if w in ('sua', 'seu', 'suas', 'seus') and i and words[i - 1] not in _ARTICLE:
+                br += 1  # "Recupere sua carne": Brazil's possessive without its article
+        first = re.match(r'\s*([a-zà-ÿ]+)', t)
+        if first:
+            if first.group(1) in _PT_IMPERATIVE:
+                pt += 1
+            elif first.group(1) in _BR_IMPERATIVE:
+                br += 0.5
+        pt += 2 * len(re.findall(r'\b(?:está|estás|estou|estão|estar|estava|a) a [a-zà-ÿ]+[aei]r\b', t))
+        pt += 2 * len(re.findall(r'^a (?:jogar|explorar|lutar|correr|conduzir)\b', t))
+        br += 2 * len(re.findall(r'\b(?:está|estou|estão|estava|estar) [a-zà-ÿ]+(?:ando|endo|indo)\b', t))
+    if pt >= 2 and pt >= 2 * br:
+        return 'pt'
+    if br >= 2 and br >= 2 * pt:
+        return 'br'
+    return None
+
+
+# The SDK's kernel.user_country for each Portuguese: Portugal 84, Brazil 13 (its default, 103, is
+# the United States).
+PT_COUNTRY = {'pt': 84, 'br': 13}
+PT_NAMES = {'pt': 'Português (Portugal)', 'br': 'Português (Brasil)'}
+
+
+def _choices(best, variants):
+    out = []
+    for i in best:
+        if i == 9 and variants:
+            out += [{'key': '9-' + v, 'id': 9, 'country': PT_COUNTRY[v], 'name': PT_NAMES[v]} for v in variants]
+        else:
+            out.append({'key': str(i), 'id': i, 'country': None, 'name': LANGUAGES[i]})
+    return out
+
+
+def choice_key(lang, country, choices=()):
+    """The choice a game's settings make (kernel.user_language, kernel.user_country): '1', '4',
+    '9-pt' (Portugal's Portuguese), '9-br' (Brazil's), '9'; None when unset. A bare '9' is the
+    game's one Portuguese when it has one."""
+    if not isinstance(lang, int) or lang <= 0:
+        return None
+    if lang != 9:
+        return str(lang)
+    key = {84: '9-pt', 13: '9-br'}.get(country, '9')
+    keys = [c['key'] for c in choices]
+    if key not in keys:
+        alt = [k for k in keys if k.startswith('9')]
+        if len(alt) == 1:
+            key = alt[0]
+    return key

@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.33.0'
+VERSION = '1.33.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.33.1', '2026-11-24', [
+        "Language: Português (Portugal) or Português (Brasil), as the game's own Portuguese texts are "
+        "(tu and ecrã, or você and tela): Limbo, Castle Crashers, Spelunky, Super Meat Boy, Minecraft "
+        "and 3D Ultra Minigolf are Portugal's; Forza Horizon, Darwinia, Peggle 2, Babel Rising, "
+        "Brothers, Dark Souls II, Halo CEA and Orcs Must Die are Brazil's. A game whose data has both "
+        "lists both, and the console's country follows the choice (Portugal or Brazil) so the game "
+        "picks that one.",
+        "A game's fonts no longer narrow its languages (Super Meat Boy's Chinese.fnt hid its "
+        "European ones).",
+    ]),
     ('1.33.0', '2026-11-24', [
         "Language: a game made in several languages plays in the one you pick, Português where "
         "the game has it (Limbo, Castle Crashers, Darwinia, Peggle 2, Forza Horizon, Babel Rising...): "

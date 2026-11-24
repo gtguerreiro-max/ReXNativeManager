@@ -73,7 +73,7 @@ couch with the controller.
   Castle Crashers, Peggle 2, Forza Horizon...), on the game page or the game on the Deck page (Sem
   PC mode too), for the PC and the Deck at once, without a rebuild. The list is the languages of
   its achievement texts that its disc's data carries (Diablo III's European disc: English and
-  French).
+  French), with Português (Portugal) told from Português (Brasil) by the game's own texts.
 - **Snapshots for reports:** in the game, the settings menu and Y save that moment (the picture
   and the next frames as a trace); the next report sends them, and Claude replays those frames.
 - **Achievements:** each game's Xbox 360 achievements (name, description, gamerscore, icon; secret

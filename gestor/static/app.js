@@ -482,10 +482,10 @@ const gameLangs = {};
 function langSelectHtml(slug) {
   const r = gameLangs[slug];
   if (!r || (r.languages || []).length < 2) return '';
-  const now = r.pc || r.deck || 1;
+  const now = r.pc || r.deck || '1';
   return `<label class="lang" title="The language the game is played in, on this PC and on the Deck">🌐
     <select onchange="setGameLanguage(this.value)">${r.languages.map(l =>
-      `<option value="${l.id}" ${l.id === now ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`;
+      `<option value="${esc(l.key)}" ${l.key === now ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`;
 }
 function loadGameLanguage(slug) {
   api(`/api/games/${encodeURIComponent(slug)}/language`).then(r => {
@@ -497,9 +497,9 @@ function loadGameLanguage(slug) {
 async function setGameLanguage(v) {
   const slug = cur.slug;
   try {
-    const r = await api(`/api/games/${encodeURIComponent(slug)}/language`, { body: { lang: +v } });
+    const r = await api(`/api/games/${encodeURIComponent(slug)}/language`, { body: { lang: v } });
     gameLangs[slug] = r;
-    const name = ((r.languages || []).find(l => l.id === +v) || {}).name || v;
+    const name = ((r.languages || []).find(l => l.key === v) || {}).name || v;
     toast(`${name}: next time the game starts${r.job ? ' (on the Deck too: its settings go with it when the Deck answers)' : ''}`);
   } catch (e) { fail(e); }
 }
