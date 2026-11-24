@@ -471,9 +471,37 @@ function gameHeroHtml(g) {
         ${g.built ? `<button class="b p big" onclick="playSlug('${esc(g.slug)}', 'pc')">▶ Play on this PC</button>` : ''}
         ${onDeck ? `<button class="b big" onclick="playSlug('${esc(g.slug)}', 'deck')" title="Through the Deck's Steam, like Play in Deck mode">▶ Play on the Deck</button>` : ''}
         <button class="b big" onclick="openStore({title: ${esc(JSON.stringify(g.title))}, slug: '${esc(g.slug)}', xbla: ${xbla}, cover: '${box}'})">Store page</button>
+        <span id="glang">${langSelectHtml(g.slug)}</span>
       </div>
       ${g.built ? `<div class="small muted" style="margin-top:8px">On this PC with the PC settings (F1 in the game opens the settings HUD). A controller or the keyboard: ${PLAY_KEYS}.</div>` : ''}
     </div></div></div>`;
+}
+// The game's language (the SDK's kernel.user_language, what XGetLanguage tells the game): one of
+// the languages its SPA has texts in, for the PC and the Deck together.
+const gameLangs = {};
+function langSelectHtml(slug) {
+  const r = gameLangs[slug];
+  if (!r || (r.languages || []).length < 2) return '';
+  const now = r.pc || r.deck || 1;
+  return `<label class="lang" title="The language the game is played in, on this PC and on the Deck">🌐
+    <select onchange="setGameLanguage(this.value)">${r.languages.map(l =>
+      `<option value="${l.id}" ${l.id === now ? 'selected' : ''}>${esc(l.name)}</option>`).join('')}</select></label>`;
+}
+function loadGameLanguage(slug) {
+  api(`/api/games/${encodeURIComponent(slug)}/language`).then(r => {
+    gameLangs[slug] = r;
+    const el = $('#glang');
+    if (el && cur && cur.slug === slug) el.innerHTML = langSelectHtml(slug);
+  }).catch(() => {});
+}
+async function setGameLanguage(v) {
+  const slug = cur.slug;
+  try {
+    const r = await api(`/api/games/${encodeURIComponent(slug)}/language`, { body: { lang: +v } });
+    gameLangs[slug] = r;
+    const name = ((r.languages || []).find(l => l.id === +v) || {}).name || v;
+    toast(`${name}: next time the game starts${r.job ? ' (on the Deck too: its settings go with it when the Deck answers)' : ''}`);
+  } catch (e) { fail(e); }
 }
 function loadGameCard(slug) {
   if (gameCards[slug]) return;
@@ -486,6 +514,7 @@ function loadGameCard(slug) {
 function renderGame() {
   const g = cur;
   loadGameCard(g.slug);
+  if (!gameLangs[g.slug]) loadGameLanguage(g.slug);
   let h = gameHeroHtml(g) + subtabs([['resumo', 'Summary'], ['conquistas', 'Achievements'], ['cenas', 'Test scenes'], ['defs', 'Settings'], ['capas', 'Covers'], ['tarefas', 'Jobs']], curSub, 'gameSub');
   if (curSub === 'resumo') h += gameSummary(g);
   if (curSub === 'cenas') h += '<div id="scenebox" class="muted">Loading...</div>';
@@ -1401,6 +1430,7 @@ function storeHtml(c, o) {
   if ((e.tags || []).length) facts.push(['Region', e.tags.join(', ')]);
   if (e.source) facts.push(['Source', e.own ? 'Your files' : e.source]);
   if (e.name) facts.push(['File', e.name]);
+  if ((c.languages || []).length) facts.push(['Languages', c.languages.join(', ')]);
   if (c.achievements && c.achievements.count) facts.push(['Achievements', `${c.achievements.count} · ${c.achievements.gamerscore} G${c.achievements.unlocked ? ` (${c.achievements.unlocked} unlocked)` : ''}`]);
   if (c.tid) facts.push(['Title ID', c.tid]);
   storeMore = similarGames(c.genres || [], [c.title, o.title, e.title]);

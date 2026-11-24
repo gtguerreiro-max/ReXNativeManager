@@ -420,3 +420,4 @@ button.gch.focus, button.gch:focus { border-color: var(--accent); background: #f
 .stmore .mo { flex: none; width: 132px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; }
 .stmore .mo img { width: 132px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; display: block; opacity: 1; }
 .stmore .mo span { display: block; font-size: 13.5px; margin-top: 6px; line-height: 1.25; }
+.langs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 6px; }

@@ -310,3 +310,118 @@ def _ts(iso):
         return datetime.datetime.fromisoformat(iso).timestamp()
     except (TypeError, ValueError):
         return 0
+
+
+# XLanguage (the SDK's kernel.user_language): what each id is called, in its own language.
+LANGUAGES = {1: 'English', 2: '日本語', 3: 'Deutsch', 4: 'Français', 5: 'Español', 6: 'Italiano',
+             7: '한국어', 8: '繁體中文', 9: 'Português', 10: '简体中文', 11: 'Polski', 12: 'Русский',
+             13: 'Svenska', 14: 'Türkçe', 15: 'Norsk', 16: 'Nederlands', 17: '简体中文'}
+_langs = {}  # work -> (mtime of image.bin, [ids])
+
+
+def languages(work):
+    """The languages the game plays in (XLanguage ids, English first), [] when the game has no
+    image yet: those its SPA has texts in (a title localises its achievements into the languages
+    it is made in) that its data carries (data_languages), English always."""
+    img = os.path.join(work, 'run', 'image.bin')
+    try:
+        mtime = os.path.getmtime(img)
+    except OSError:
+        return []
+    hit = _langs.get(work)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    try:
+        b = open(img, 'rb').read()
+    except OSError:
+        return []
+    best = []
+    for _, entries in _xdbf_blocks(b):
+        ids = sorted(eid for (sec, eid) in entries if sec == SEC_STRING and eid in LANGUAGES)
+        if len(ids) > len(best):
+            best = ids
+    # 10 is the SDK's old simplified Chinese id, kept beside 17: one entry.
+    if 10 in best and 17 in best:
+        best.remove(10)
+    game = os.path.join(work, 'run', 'game')
+    data = data_languages(game) if os.path.isdir(game) else None
+    if data is not None:
+        best = [i for i in best if i in data or i == 1]
+    _langs[work] = (mtime, best)
+    return best
+
+# -- the languages the game's data carries ----------------------------------------------------------
+# A title's SPA lists every language the title was made in, across its regions; a disc can carry
+# fewer (Diablo III's European disc: enGB and frFR packs only; Burnout Crash's: EN-US.LANG and
+# FR-FR.LANG), and a language it lacks plays in English. Files and folders named by locale, as
+# siblings that differ only in it (enGB_Act1.cpk, frFR_Act1.cpk; data/language/pl-pl), say which:
+# speech, Kinect grammars, voices and subtitles left out (Forza Horizon's SatNav voices, Babel
+# Rising's Kinect grammars are not its text).
+_LOCALE_PAIRS = {
+    'en': 'US GB UK AU CA IE NZ', 'fr': 'FR CA BE CH', 'de': 'DE AT CH', 'es': 'ES MX AR CL CO',
+    'it': 'IT CH', 'pt': 'PT BR', 'ja': 'JP', 'ko': 'KR', 'zh': 'TW HK CN SG CHT CHS HANT HANS', 'pl': 'PL', 'ru': 'RU',
+    'sv': 'SE', 'tr': 'TR', 'nb': 'NO', 'no': 'NO', 'nl': 'NL BE', 'cs': 'CZ', 'hu': 'HU', 'da': 'DK',
+    'fi': 'FI', 'el': 'GR'}
+_LOCALE_IDS = {'en': [1], 'ja': [2], 'de': [3], 'fr': [4], 'es': [5], 'it': [6], 'ko': [7], 'pt': [9],
+               'pl': [11], 'ru': [12], 'sv': [13], 'tr': [14], 'nb': [15], 'no': [15], 'nl': [16]}
+_LOCALE_WORDS = {'english': [1], 'japanese': [2], 'german': [3], 'deutsch': [3], 'french': [4],
+                 'francais': [4], 'spanish': [5], 'espanol': [5], 'italian': [6], 'italiano': [6],
+                 'korean': [7], 'chinese': [8, 10, 17], 'portuguese': [9], 'portugues': [9], 'brazilian': [9],
+                 'polish': [11], 'russian': [12], 'swedish': [13], 'turkish': [14], 'norwegian': [15],
+                 'dutch': [16]}
+_LOCALE_TOKEN = re.compile(r'(?<![A-Za-z])([A-Za-z]{2})([-_]?)([A-Za-z]{2}|cht|chs|hant|hans)(?![A-Za-z])',
+                           re.I)
+_LOCALE_WORD = re.compile(r'(?i)(?<![A-Za-z])(%s)(?![A-Za-z])' % '|'.join(_LOCALE_WORDS))
+_NOT_TEXT = re.compile(r'(?i)speech|kinect|grammar|satnav|voice|audio|sound|sfx|music|movie|video|subt'
+                       r'|(?<![a-z])vo(?![a-z])')
+
+
+def _locales_in(name):
+    """[(language key, (start, end))] of the locale tokens and language words in a file name."""
+    out = []
+    for m in _LOCALE_TOKEN.finditer(name):
+        lang, sep, country = m.group(1), m.group(2), m.group(3)
+        if lang.lower() not in _LOCALE_PAIRS or country.upper() not in _LOCALE_PAIRS[lang.lower()].split():
+            continue
+        if not sep and not (lang.islower() and country.isupper() and len(country) == 2):
+            continue  # enGB, not a word's four letters
+        if lang.lower() == 'zh' and country.upper() in ('CN', 'SG', 'CHS', 'HANS'):
+            ids = [10, 17]
+        elif lang.lower() == 'zh':
+            ids = [8]
+        else:
+            ids = _LOCALE_IDS.get(lang.lower(), [])
+        out.append((lang.lower(), ids, m.span()))
+    for m in _LOCALE_WORD.finditer(name):
+        out.append((m.group(1).lower(), _LOCALE_WORDS[m.group(1).lower()], m.span()))
+    return out
+
+
+def data_languages(game_dir, limit=40000):
+    """The XLanguage ids of the language packs in a game's data (its folder of files), or None
+    when its names show no set of them (one language alone says nothing)."""
+    groups = {}
+    seen = 0
+    for dp, dn, fn in os.walk(game_dir):
+        rel = os.path.relpath(dp, game_dir)
+        if rel.count(os.sep) >= 5:
+            dn[:] = []
+        for name in dn + fn:
+            seen += 1
+            found = _locales_in(name)
+            if len(found) != 1:
+                continue
+            key, ids, (a, b) = found[0]
+            if _NOT_TEXT.search(rel) or _NOT_TEXT.search(name[:a] + name[b:]):
+                continue
+            g = groups.setdefault((rel, name[:a].lower() + '\0' + name[b:].lower()), {})
+            g[key] = ids
+        if seen > limit:
+            break
+    if not any(len(g) >= 2 for g in groups.values()):
+        return None
+    out = set()
+    for g in groups.values():
+        for ids in g.values():
+            out.update(ids)
+    return out

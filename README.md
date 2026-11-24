@@ -69,6 +69,11 @@ couch with the controller.
   (Summary) or the game on the Deck page, applied by the next build (Build and test, Rebuild and
   send, Rebuild all); nothing is built until you ask. Shown only where there is a patch, with its
   notes (some games run too fast or glitch somewhere with it).
+- **Language:** a game made in several languages plays in the one you pick (Português in Limbo,
+  Castle Crashers, Peggle 2, Forza Horizon...), on the game page or the game on the Deck page (Sem
+  PC mode too), for the PC and the Deck at once, without a rebuild. The list is the languages of
+  its achievement texts that its disc's data carries (Diablo III's European disc: English and
+  French).
 - **Snapshots for reports:** in the game, the settings menu and Y save that moment (the picture
   and the next frames as a trace); the next report sends them, and Claude replays those frames.
 - **Achievements:** each game's Xbox 360 achievements (name, description, gamerscore, icon; secret

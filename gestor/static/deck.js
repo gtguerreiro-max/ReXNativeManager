@@ -914,6 +914,7 @@ function openDeckGame(slug) {
           ${g.achievements && g.achievements.count ? `<button class="btn f" data-hint="Open" onclick="openAchievements('${esc(g.slug)}')">Achievements</button>` : ''}
           ${pcBuilt && !g.job ? `<button class="btn f" data-hint="Build" onclick="openTakeover('${esc(g.slug)}')">Build on this Deck</button>` : ''}
           ${mine ? `<button class="btn f" onclick="openSettings('${esc(g.slug)}')">Settings</button>` : ''}
+          <span id="langbtn"></span>
           ${g.on_pc ? `<button class="btn f" onclick="openReport('${esc(g.slug)}')">Report a problem</button>`
             : pcBuilt ? `<button class="btn f" onclick="openTakeover('${esc(g.slug)}', true)">Report a problem</button>` : ''}
           ${mine ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
@@ -943,7 +944,41 @@ function openDeckGame(slug) {
   if (mine) loadGameCard(slug);
   else $('#gcard').innerHTML = '';
   if (g.on_pc && !isLocal()) loadFpsDeck(slug);
+  if (mine) loadLangButton(slug);
   storeFill(layer, { title: g.title, year: null, mc: null }, { slug: g.on_pc ? g.slug : null, title: g.title, xbla: /-xbla/.test(g.slug) });
+}
+// The game's language (the PC keeps it, for the PC and the Deck): a button with the one in use,
+// and a list of the languages the game has texts in.
+async function loadLangButton(slug) {
+  let r;
+  try { r = await api('/api/remote/language/' + encodeURIComponent(slug), { timeout: 20000 }); } catch (e) { return; }
+  const el = $('#langbtn');
+  if (!el || (r.languages || []).length < 2) return;
+  const now = r.deck || r.pc || 1;
+  const name = ((r.languages || []).find(l => l.id === now) || {}).name || 'English';
+  el.innerHTML = `<button class="btn f" data-hint="Change" onclick="openLanguages('${esc(slug)}')">Language: ${esc(name)}</button>`;
+  S.langs = S.langs || {};
+  S.langs[slug] = r;
+}
+function openLanguages(slug) {
+  const r = (S.langs || {})[slug];
+  if (!r) return;
+  const now = r.deck || r.pc || 1;
+  openLayer(`<div class="sheet confirm" style="width:640px"><h3>Play in which language?</h3>
+    <p>The languages this game is made in. It starts in the one you pick${isLocal() ? '' : ', on the Deck and on the PC'}.</p>
+    <div class="langs">${r.languages.map(l => `<button class="btn f ${l.id === now ? 'p' : ''}" onclick="pickLanguage('${esc(slug)}', ${l.id})">${esc(l.name)}</button>`).join('')}</div>
+    <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button></div></div>`, { focus: '.langs .btn.p' });
+}
+async function pickLanguage(slug, id) {
+  try {
+    const r = await api('/api/remote/language/' + encodeURIComponent(slug), { body: { lang: id }, timeout: 30000 });
+    S.langs[slug] = r;
+    const name = ((r.languages || []).find(l => l.id === id) || {}).name || '';
+    closeLayer();
+    toast(isLocal() || !r.job ? `${name}: the game starts in ${name} next time`
+      : `${name}: the game's settings go to the Deck now; it starts in ${name} next time`);
+    loadLangButton(slug);
+  } catch (e) { toast(e.message, true); }
 }
 // A store page's data for a sheet already open (the Deck tab's and the On the PC tab's games).
 function storeFill(layer, g, o) {
@@ -1603,6 +1638,7 @@ function fillStore(layer, g, c) {
   if ((c.publishers || []).length) extra.push(['Publisher', c.publishers.join(', ')]);
   if (c.released) extra.push(['Released', new Date(c.released + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })]);
   if (c.achievements && c.achievements.count) extra.push(['Achievements', `${c.achievements.count} · ${c.achievements.gamerscore} G`]);
+  if ((c.languages || []).length) extra.push(['Languages', c.languages.join(', ')]);
   $('#stfacts', el).insertAdjacentHTML('afterbegin', extra.map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join(''));
   // More like this: the catalogue's games with the most genres in common (then the best rated).
   const want = new Set((c.genres || []).map(x => x.toLowerCase()));

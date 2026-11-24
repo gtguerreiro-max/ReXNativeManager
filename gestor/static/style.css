@@ -286,3 +286,7 @@ input, select { border-radius: 8px; }
 .st-shots button { position: relative; }
 .st-plus { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000a;
   font-size: 26px; font-weight: 700; color: #fff; }
+label.lang { display: inline-flex; align-items: center; gap: 6px; background: #ffffff14; border: 1px solid #ffffff26;
+  border-radius: 8px; padding: 4px 6px 4px 10px; font-size: 14.5px; }
+label.lang select { background: transparent; border: 0; color: var(--text); font: inherit; padding: 4px; }
+label.lang select option { background: var(--panel); }

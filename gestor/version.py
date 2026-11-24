@@ -8,10 +8,21 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.32.0'
+VERSION = '1.33.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.33.0', '2026-11-24', [
+        "Language: a game made in several languages plays in the one you pick, Português where "
+        "the game has it (Limbo, Castle Crashers, Darwinia, Peggle 2, Forza Horizon, Babel Rising...): "
+        "the list beside Store page on the game page, Language on the game's page on the Deck, also "
+        "in Sem PC mode (Deck service 0.9.0). It goes to the PC and the Deck together and needs no "
+        "rebuild; store pages list the languages.",
+        "The list is the languages the game's achievement texts come in that its disc carries: "
+        "Diablo III's European disc has English and French packs only, so Português is not offered "
+        "there. Diablo III and Geometry Wars 3 ask the system for the language another way (ReXGlue "
+        "SDK patch 0048): they follow the choice after a rebuild.",
+    ]),
     ('1.32.0', '2026-11-24', [
         "More genres: each game's Wikipedia infobox adds what Wikidata and the store leave out "
         "(SSX: Sports and Snowboarding; 1037 genres more over the catalogue).",

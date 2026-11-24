@@ -1863,6 +1863,8 @@ def _card(title, slug=None, xbla=None):
     c = market.card(title, tid=tid, xbla=None if xbla is None else bool(xbla))
     c['slug'] = slug
     c['achievements'] = None
+    c['languages'] = [achievements.LANGUAGES[i] for i in achievements.languages(games.find(slug))] \
+        if slug and games.find(slug) else []
     if slug and games.find(slug):
         try:
             c['achievements'] = achievements.summary(games.find(slug), slug)
@@ -2114,6 +2116,70 @@ def remote_game(slug: str):
 
 
 DECK_QUICK = ['rexnative.classic', 'rexnative.upscaler', 'rexnative.upscaler_mode', 'rexnative.menu_fps']
+
+
+# -- a língua do jogo: kernel.user_language do SDK (o XGetLanguage do jogo), por jogo -----------------
+def _language_state(w):
+    """As línguas do jogo (do SPA) e a escolhida no PC e no Deck (None: a de origem, inglês)."""
+    import tomllib
+    cur = {}
+    for where, path in games.settings_files(w).items():
+        try:
+            v = (tomllib.loads(games.read_text(path)).get('kernel') or {}).get('user_language')
+        except (tomllib.TOMLDecodeError, OSError):
+            v = None
+        cur[where] = v if isinstance(v, int) else None
+    ids = achievements.languages(w)
+    return {'languages': [{'id': i, 'name': achievements.LANGUAGES[i]} for i in ids],
+            'pc': cur.get('pc'), 'deck': cur.get('deck')}
+
+
+def _set_language(slug, lang):
+    """A língua escolhida, no PC e no Deck (as definições dos dois). No Deck vai já, com as definições
+    (as que o HUD do Deck mudou dão lugar às do PC), quando ele responder."""
+    w = _work(slug)
+    lang = int(lang) if lang not in (None, '', 0, '0') else None
+    if lang is not None and lang not in achievements.LANGUAGES:
+        raise HTTPException(400, 'unknown language %s' % lang)
+    value = None if lang in (None, 1) else lang
+    files = games.settings_files(w)
+    pc_toml = os.path.exists(files.get('pc') or '')
+    for where, path in files.items():
+        # The Deck's settings are the PC's run/<name>.toml with deck.toml over it: deck.toml only
+        # when it is there (it may hold an older choice), or when the game has no PC settings yet.
+        if not os.path.exists(path) and (where == 'pc' or pc_toml or value is None):
+            continue
+        text = games.apply_values(games.read_text(path), {'kernel.user_language': value})
+        err = games.validate_toml(text)
+        if err:
+            raise HTTPException(400, 'invalid TOML: %s' % err)
+        games.write_text(path, text)
+    out = _language_state(w)
+    out['job'] = None
+    if slug in deck.index():
+        out['job'] = _job(_from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True,
+                                                  wait=True)))
+    return out
+
+
+@app.get('/api/games/{slug}/language')
+def game_language(slug: str):
+    return _language_state(_work(slug))
+
+
+@app.post('/api/games/{slug}/language')
+def game_language_set(slug: str, body: dict = Body(...)):
+    return _set_language(slug, body.get('lang'))
+
+
+@app.get('/api/remote/language/{slug}')
+def remote_language(slug: str):
+    return _language_state(_work(slug))
+
+
+@app.post('/api/remote/language/{slug}')
+def remote_language_set(slug: str, body: dict = Body(...)):
+    return _set_language(slug, body.get('lang'))
 
 
 @app.get('/api/remote/settings/{slug}')
