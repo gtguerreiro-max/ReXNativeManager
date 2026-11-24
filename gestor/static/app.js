@@ -490,8 +490,10 @@ function langSelectHtml(slug) {
 function loadGameLanguage(slug) {
   api(`/api/games/${encodeURIComponent(slug)}/language`).then(r => {
     gameLangs[slug] = r;
-    const el = $('#glang');
-    if (el && cur && cur.slug === slug) el.innerHTML = langSelectHtml(slug);
+    for (const id of ['#glang', '#glang2']) {
+      const el = $(id);
+      if (el && cur && cur.slug === slug && langSelectHtml(slug)) el.innerHTML = langSelectHtml(slug);
+    }
   }).catch(() => {});
 }
 async function setGameLanguage(v) {
@@ -499,6 +501,7 @@ async function setGameLanguage(v) {
   try {
     const r = await api(`/api/games/${encodeURIComponent(slug)}/language`, { body: { lang: v } });
     gameLangs[slug] = r;
+    for (const id of ['#glang', '#glang2']) { const el = $(id); if (el) el.innerHTML = langSelectHtml(slug); }
     const name = ((r.languages || []).find(l => l.key === v) || {}).name || v;
     toast(`${name}: next time the game starts${r.job ? ' (on the Deck too: its settings go with it when the Deck answers)' : ''}`);
   } catch (e) { fail(e); }
@@ -524,7 +527,7 @@ function renderGame() {
   if (curSub === 'tarefas') h += gameJobs(g);
   $('#dbody').innerHTML = h;
   if (curSub === 'capas') loadCovers();
-  if (curSub === 'defs') fillQuickForms();
+  if (curSub === 'defs') { fillQuickForms(); loadDeckBase(); }
   if (curSub === 'resumo') { loadReports(); loadFpsBoost(); }
   if (curSub === 'cenas') loadScenes();
   if (curSub === 'conquistas') loadAchievements();
@@ -903,18 +906,9 @@ async function deckResend(steam, force) {
 }
 
 // -- definições do jogo ---------------------------------------------------------------------------
-const QUICK = [
-  ['rexnative.classic', 'Renderer', [['', '(default: Native)'], ['false', 'Native (ReXNative)'], ['true', 'Classic (ReXGlue Xenos)']]],
-  ['rexnative.enabled', 'ReXNative enabled', [['', '(default)'], ['true', 'yes'], ['false', 'no (ReXGlue only, no HUD)']]],
-  ['rexnative.upscaler', 'Upscaler', [['', '(default)'], ['true', 'on'], ['false', 'off']]],
-  ['rexnative.upscaler_backend', 'Upscaler type', [['', '(default)'], ['auto', 'Automatic'], ['dlss', 'NVIDIA DLSS'], ['fsr', 'AMD FSR']]],
-  ['rexnative.upscaler_mode', 'Upscaler mode', [['', '(default)'], ['native', 'Native AA (DLAA)'], ['quality', 'Quality'], ['balanced', 'Balanced'], ['performance', 'Performance'], ['ultra', 'Ultra performance']]],
-  ['rexnative.fsr_version', 'FSR version', [['', '(default)'], ['auto', 'Latest'], ['4', 'FSR 4'], ['3', 'FSR 3.1']]],
-  ['rexnative.menu_fps', 'FPS limit (menu_fps)', [['', '(default: 60)'], ['30', '30'], ['60', '60'], ['0', 'unlimited']]],
-  ['rexnative.frame_latency', 'Frame latency', [['', '(default)'], ['1', '1'], ['2', '2'], ['3', '3']]],
-  ['rexnative.anisotropy', 'Texture filtering', [['', '(default)'], ['1', 'game default'], ['2', '2x'], ['4', '4x'], ['8', '8x'], ['16', '16x']]],
-  ['log.level', 'Log level', [['', '(default)'], ['info', 'info'], ['debug', 'debug']]],
-];
+// The Deck's settings under deck.toml: the PC's file with the kit's Deck settings on it
+// (/api/remote/settings: base), what "Default" means in the Deck's form.
+let deckBase = {};
 function parseToml(text) {
   const out = {};
   let sec = '';
@@ -928,12 +922,15 @@ function parseToml(text) {
   return out;
 }
 function gameSettings(g) {
-  const parts = [['deck', 'On the Steam Deck — deck.toml', 'On top of the settings the kit gives the Deck (1280x800 screen, native FSR, latency 2, anisotropy 8). Empty = those.'],
-                 ['pc', 'On the PC — run/' + (g.exe || '?') + '.toml', 'The settings file for the game on the PC (the HUD, F1, also writes here).']];
-  return parts.filter(([k]) => g.settings[k]).map(([k, title, hint]) => `
+  const parts = [['pc', 'On the PC — run/' + (g.exe || '?') + '.toml', 'The game\'s settings on this PC, as its settings HUD (F1) has them; the HUD writes here too. Default: the renderer\'s own.'],
+                 ['deck', 'On the Steam Deck — deck.toml', 'On top of the PC\'s settings and the kit\'s for the Deck (its 1280x800 screen, FSR at native resolution, frame latency 1). Default: those.']];
+  const lang = `<h3>Language</h3><p class="muted small">The languages this game is made in, for this PC and the Deck together. Português (Brasil) is Brazil's.</p>
+    <div class="row" id="glang2">${langSelectHtml(g.slug) || '<span class="muted small">English only, or the game has no SPA yet.</span>'}</div>`;
+  return lang + parts.filter(([k]) => g.settings[k]).map(([k, title, hint]) => `
     <h3>${esc(title)}</h3><p class="muted small">${esc(hint)} <span class="muted">${esc(g.settings[k].path)}</span></p>
-    <div class="form" id="qf-${k}">${QUICK.map(([key, label, opts]) => `<label>${esc(label)}</label>
-      <select data-key="${key}">${opts.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('')}</select>`).join('')}</div>
+    <div class="form setform" id="qf-${k}">${settingsFor(k).map((s, n) => `${n === 0 || settingsFor(k)[n - 1].group !== s.group ? `<div class="setgroup">${esc(s.group)}</div>` : ''}
+      <label title="${esc(s.hint)}">${esc(s.label)}</label>
+      <select data-id="${s.id}" title="${esc(s.hint)}"></select>`).join('')}</div>
     <div class="row" style="margin:8px 0"><button class="b p" onclick="applyQuick('${k}')">Apply these options</button></div>
     <details><summary class="muted small">Edit the file by hand</summary>
       <textarea id="tx-${k}" spellcheck="false">${esc(g.settings[k].text)}</textarea>
@@ -948,20 +945,38 @@ function fillQuickForms() {
     const box = $('#qf-' + k);
     if (!box) continue;
     const vals = parseToml(cur.settings[k].text);
-    box.querySelectorAll('select').forEach(s => {
-      const v = vals[s.dataset.key];
-      if (v !== undefined && ![...s.options].some(o => o.value === v)) s.add(new Option(v + ' (current)', v));
-      s.value = v !== undefined ? v : '';
+    const base = k === 'deck' ? deckBase : {};
+    box.querySelectorAll('select').forEach(sel => {
+      const s = GAME_SETTINGS.find(x => x.id === sel.dataset.id);
+      const d = settingIndex(s, base);
+      const opts = [['', `Default${d >= 0 ? ` (${s.choices[d][0]})` : ' (the game\'s)'}`]].concat(s.choices.map(([l], i) => [String(i), l]));
+      let now = '';
+      if (settingSet(s, vals)) {
+        const i = settingIndex(s, Object.assign({}, base, vals));
+        now = i >= 0 ? String(i) : 'keep';
+        if (i < 0) opts.push(['keep', 'As set in the file']);
+      }
+      sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${esc(l)}</option>`).join('');
+      sel.value = now;
+      sel.dataset.start = now;
     });
   }
 }
+async function loadDeckBase() {
+  if (!cur || !cur.settings || !cur.settings.deck) return;
+  try {
+    deckBase = (await api(`/api/remote/settings/${encodeURIComponent(cur.slug)}`)).base || {};
+    fillQuickForms();
+  } catch (e) { /* the defaults stay the renderer's */ }
+}
 async function applyQuick(k) {
   const values = {};
-  const before = parseToml(cur.settings[k].text);
-  $('#qf-' + k).querySelectorAll('select').forEach(s => {
-    const key = s.dataset.key, v = s.value;
-    if ((before[key] ?? '') === v) return;
-    values[key] = v === '' ? null : (v === 'true' ? true : v === 'false' ? false : /^\d+$/.test(v) ? Number(v) : v);
+  $('#qf-' + k).querySelectorAll('select').forEach(sel => {
+    const v = sel.value;
+    if (v === sel.dataset.start || v === 'keep') return;
+    const s = GAME_SETTINGS.find(x => x.id === sel.dataset.id);
+    if (v === '') settingKeys(s).forEach(key => { values[key] = null; });
+    else Object.assign(values, s.choices[Number(v)][1]);
   });
   if (!Object.keys(values).length) return toast('Nothing changed');
   try {

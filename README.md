@@ -58,7 +58,7 @@ couch with the controller.
   built folder, after a copy of this PC's saves (backups\pc), and the downloaded file if you tick it;
   your own dumps are never touched, and the Deck's copy stays as it is.
 - **Steam Deck:** install (internal storage or microSD), update, delete with a backup of the saves,
-  per-game settings, the Steam artwork, the library shortcuts. The Steam Deck tab opens with the
+  per-game settings (all of the in-game settings menu's, with the language), the Steam artwork, the library shortcuts. The Steam Deck tab opens with the
   link at a glance: whether the Deck answers and since when, what is waiting for it, and whether
   its launcher and Decky plugin are the latest (Update there).
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your

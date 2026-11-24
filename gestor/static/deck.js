@@ -1255,26 +1255,46 @@ async function updateGame(slug) {
   } catch (e) { toast(e.message, true); }
 }
 
-const QUICK = [
-  ['rexnative.classic', 'Renderer', [['', 'Default (Native)'], ['false', 'Native (ReXNative)'], ['true', 'Classic (ReXGlue)']]],
-  ['rexnative.upscaler', 'Upscaler', [['', 'Default'], ['true', 'On'], ['false', 'Off']]],
-  ['rexnative.upscaler_mode', 'Upscaler mode', [['', 'Default'], ['native', 'Native AA'], ['quality', 'Quality'], ['balanced', 'Balanced'], ['performance', 'Performance']]],
-  ['rexnative.menu_fps', 'FPS limit', [['', 'Default (60)'], ['30', '30'], ['60', '60'], ['0', 'Unlimited']]],
-];
+// A game's settings on the Deck, as its settings menu in the game (Back + Start) has them
+// (settings.js), with its language first: each row shows what the game has now; left and right
+// change it, and only the rows changed are written.
 async function openSettings(slug) {
-  let vals = {};
-  try { vals = (await api('/api/remote/settings/' + encodeURIComponent(slug))).values; } catch (e) { toast(e.message, true); return; }
+  let st;
+  try { st = await api('/api/remote/settings/' + encodeURIComponent(slug), { timeout: 30000 }); } catch (e) { toast(e.message, true); return; }
   const g = deckGame(slug) || { title: slug };
-  const rows = QUICK.map(([k, label, opts]) => {
-    const i = Math.max(0, opts.findIndex(o => o[0] === (vals[k] || '')));
-    return `<button class="opt f" data-key="${k}" data-i="${i}" data-hint="Change" onclick="cycle(this, 1)">
-      <span class="l">${esc(label)}</span><span class="arr">◀</span><span class="v">${esc(opts[i][1])}</span><span class="arr">▶</span></button>`;
+  const eff = Object.assign({}, st.base || {}, st.values || {});
+  const rows = [];
+  const lang = st.language || {};
+  if ((lang.languages || []).length > 1) {
+    const now = lang.deck || lang.pc || '1';
+    const opts = lang.languages.map(l => [l.name, l.key]);
+    rows.push({ id: 'language', group: 'Game', label: 'Language', opts, start: Math.max(0, opts.findIndex(o => o[1] === now)),
+      hint: 'The languages this game is made in. Português (Brasil) is Brazil\'s; the game starts in the one you pick.' });
+  }
+  for (const s of settingsFor('deck')) {
+    const opts = s.choices.slice();
+    let i = settingIndex(s, eff);
+    if (i < 0) { opts.unshift([Object.keys(s.def).length ? 'As it is' : 'The game\'s', null]); i = 0; }
+    rows.push({ id: s.id, group: s.group, label: s.label, opts, start: i, hint: s.hint });
+  }
+  S.setRows = rows;
+  let group = null;
+  const html = rows.map((r, n) => {
+    const head = r.group !== group ? `<div class="optgroup">${esc(group = r.group)}</div>` : '';
+    return head + `<button class="opt f" data-row="${n}" data-i="${r.start}" data-hint="Change" onclick="cycle(this, 1)" onfocus="settingHint(this)" onmouseenter="settingHint(this)">
+      <span class="l">${esc(r.label)}</span><span class="arr">◀</span><span class="v">${esc(r.opts[r.start][0])}</span><span class="arr">▶</span></button>`;
   }).join('');
-  openLayer(`<div class="sheet confirm" style="width:720px"><h3>Settings on the Deck</h3>
-    <p>${esc(g.title)}: what you change here goes to the Deck and replaces the game's settings there.</p>
-    <div class="opts">${rows}</div>
+  openLayer(`<div class="sheet confirm settings" style="width:860px"><h3>Settings</h3>
+    <p>${esc(g.title)}: ${isLocal() ? 'its settings on this Deck, as its settings menu in the game (Back + Start) has them. They take effect when the game starts.'
+      : 'its settings on the Deck, as its settings menu in the game (Back + Start) has them. Saving sends them to the Deck in place of the ones there.'}</p>
+    <div class="opts">${html}</div>
+    <p class="sethint" id="sethint"></p>
     <div class="acts"><button class="btn f" onclick="closeLayer()">Cancel</button>
-      <button class="btn p f" data-hint="Save" onclick="saveSettings('${esc(slug)}')">Save and send</button></div></div>`);
+      <button class="btn p f" data-hint="Save" onclick="saveSettings('${esc(slug)}')">${isLocal() ? 'Save' : 'Save and send'}</button></div></div>`);
+}
+function settingHint(el) {
+  const r = (S.setRows || [])[+el.dataset.row], h = $('#sethint');
+  if (r && h) h.textContent = r.hint || '';
 }
 function cycle(el, d) {
   if (el.id === 'rsecs') return reportSecs(d);
@@ -1286,19 +1306,28 @@ function cycle(el, d) {
     $('.v', el).textContent = opts[i];
     return;
   }
-  const q = QUICK.find(x => x[0] === el.dataset.key);
-  if (!q) return;
-  const n = q[2].length;
+  const r = el.dataset.row !== undefined ? (S.setRows || [])[+el.dataset.row] : null;
+  if (!r) return;
+  const n = r.opts.length;
   const i = (parseInt(el.dataset.i, 10) + d + n) % n;
   el.dataset.i = i;
-  $('.v', el).textContent = q[2][i][1];
+  $('.v', el).textContent = r.opts[i][0];
+  el.classList.toggle('edited', i !== r.start);
 }
 async function saveSettings(slug) {
   const values = {};
-  for (const el of $$('.opt', scope())) { const q = QUICK.find(x => x[0] === el.dataset.key); values[el.dataset.key] = q[2][parseInt(el.dataset.i, 10)][0]; }
+  let language = null;
+  for (const el of $$('.opt[data-row]', scope())) {
+    const r = S.setRows[+el.dataset.row], i = parseInt(el.dataset.i, 10);
+    if (i === r.start || !r.opts[i][1]) continue;
+    if (r.id === 'language') language = r.opts[i][1];
+    else Object.assign(values, r.opts[i][1]);
+  }
+  if (!Object.keys(values).length && language === null) { closeLayer(); toast('Nothing changed'); return; }
   try {
-    await api('/api/remote/settings/' + encodeURIComponent(slug), { body: { values } });
-    toast('Settings on their way to the Deck');
+    await api('/api/remote/settings/' + encodeURIComponent(slug), { body: { values, language }, timeout: 40000 });
+    toast(isLocal() ? 'Saved: the game uses them the next time it starts' : 'Settings on their way to the Deck');
+    if (language !== null && S.langs) delete S.langs[slug];
     closeAll();
   } catch (e) { toast(e.message, true); }
 }

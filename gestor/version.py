@@ -8,10 +8,24 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.33.1'
+VERSION = '1.34.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.34.0', '2026-11-24', [
+        "A game's Settings on the Deck has what its settings menu in the game (Back + Start) has, "
+        "with its Language first: renderer, screen (TV or PC monitor), frame rate, FPS limit, frame "
+        "latency, antialiasing, screen scaling and FSR sharpening, texture filtering, FSR version, "
+        "upscaler mode, frame generation, occlusion queries and log level. Each row shows what the "
+        "game has now (the PC's settings with the Deck's), the one you focus is explained below, "
+        "and only the rows you change are written, sent to the Deck in one go.",
+        "The PC game page's Settings has them all too, for the PC's file and the Deck's, with the "
+        "PC's own (window, window size, resolution 2x/3x, upscaler type, DLSS 5's look, intensity, "
+        "speed, still hold and motion check), grouped as the HUD's pages, each Default saying what "
+        "it is; and the Language, for the PC and the Deck together.",
+        "Sem PC mode (Deck service 0.10.0): the same Settings, written in the installed game's own "
+        "settings.",
+    ]),
     ('1.33.1', '2026-11-24', [
         "Language: Português (Portugal) or Português (Brasil), as the game's own Portuguese texts are "
         "(tu and ecrã, or você and tela): Limbo, Castle Crashers, Spelunky, Super Meat Boy, Minecraft "

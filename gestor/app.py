@@ -3,6 +3,7 @@ para os aparelhos emparelhados: lan.py)."""
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import tarfile
@@ -51,8 +52,10 @@ if info.stale():
 
 # De fora (a rede de casa) só isto, e tudo menos a página e o emparelhar com o token de um
 # aparelho emparelhado (lan.py).
-REMOTE_PATHS = ('/deck', '/static/deck', '/static/fonts', '/static/rexlog.js', '/api/ping', '/api/pair/', '/api/remote/')
-REMOTE_OPEN = ('/deck', '/static/deck', '/static/fonts', '/static/rexlog.js', '/api/ping', '/api/pair/')
+REMOTE_PATHS = ('/deck', '/static/deck', '/static/fonts', '/static/rexlog.js', '/static/settings.js', '/api/ping',
+                '/api/pair/', '/api/remote/')
+REMOTE_OPEN = ('/deck', '/static/deck', '/static/fonts', '/static/rexlog.js', '/static/settings.js', '/api/ping',
+               '/api/pair/')
 
 
 @app.middleware('http')
@@ -1503,7 +1506,7 @@ def pair_state(request: Request):
 def deck_page():
     static = os.path.join(HERE, 'static')
     html = open(os.path.join(static, 'deck.html'), encoding='utf-8').read()
-    for name in ('deck.js', 'deck.css'):
+    for name in ('deck.js', 'deck.css', 'settings.js'):
         v = int(os.path.getmtime(os.path.join(static, name)))
         html = html.replace('/static/%s"' % name, '/static/%s?v=%d"' % (name, v))
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})
@@ -2114,7 +2117,6 @@ def remote_game(slug: str):
         'history': list(reversed(history)), 'reports': reports}
 
 
-DECK_QUICK = ['rexnative.classic', 'rexnative.upscaler', 'rexnative.upscaler_mode', 'rexnative.menu_fps']
 
 
 # -- a língua do jogo: kernel.user_language do SDK (o XGetLanguage do jogo), por jogo -----------------
@@ -2140,8 +2142,20 @@ def _language_state(w):
 def _set_language(slug, lang):
     """A língua escolhida, no PC e no Deck (as definições dos dois). No Deck vai já, com as definições
     (as que o HUD do Deck mudou dão lugar às do PC), quando ele responder."""
-    import re
     w = _work(slug)
+    _write_language(w, lang)
+    out = _language_state(w)
+    out['job'] = None
+    if slug in deck.index():
+        out['job'] = _job(_from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True,
+                                                  wait=True)))
+    return out
+
+
+def _write_language(w, lang):
+    """kernel.user_language (e kernel.user_country, para o português de Portugal ou do Brasil) nas
+    definições do PC e do Deck do jogo."""
+    import re
     m = re.fullmatch(r'(\d{1,2})(?:-(pt|br))?', str(lang if lang not in (None, '', 0) else 1).strip())
     if not m or int(m.group(1)) not in achievements.LANGUAGES:
         raise HTTPException(400, 'unknown language %s' % str(lang)[:20])
@@ -2167,12 +2181,6 @@ def _set_language(slug, lang):
         if err:
             raise HTTPException(400, 'invalid TOML: %s' % err)
         games.write_text(path, text)
-    out = _language_state(w)
-    out['job'] = None
-    if slug in deck.index():
-        out['job'] = _job(_from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True,
-                                                  wait=True)))
-    return out
 
 
 @app.get('/api/games/{slug}/language')
@@ -2195,41 +2203,79 @@ def remote_language_set(slug: str, body: dict = Body(...)):
     return _set_language(slug, body.get('lang'))
 
 
+def _flat_toml(text):
+    """{section.key: value} of a settings file (its tables one level deep)."""
+    import tomllib
+    try:
+        d = tomllib.loads(text or '')
+    except tomllib.TOMLDecodeError:
+        return {}
+    return {'%s.%s' % (sec, k): v for sec, kv in d.items() if isinstance(kv, dict)
+            for k, v in kv.items() if not isinstance(v, (dict, list))}
+
+
+# The settings the Deck page's Settings writes (gestor/static/settings.js, the game's settings HUD):
+# ReXNative's and ReXGlue's window ones, and the log's level; the ones that are words stay words
+# ("4" is FSR 4's version, not a number).
+SETTING_KEY = re.compile(r'^(?:rexnative|ui)\.[a-z0-9_]{1,40}$|^log\.level$')
+STRING_SETTINGS = {'rexnative.fsr_version', 'rexnative.upscaler_backend', 'rexnative.upscaler_mode',
+                   'rexnative.dlss5_look', 'log.level', 'ui.resolution'}
+
+
+def _setting_value(key, v):
+    if v is None or isinstance(v, (bool, int, float)):
+        return v
+    s = str(v).strip()
+    if key in STRING_SETTINGS:
+        if not re.fullmatch(r'[A-Za-z0-9_.-]{0,32}', s):
+            raise HTTPException(400, 'not a value for %s: %r' % (key, s[:40]))
+        return s or None
+    if s.lower() in ('true', 'false'):
+        return s.lower() == 'true'
+    if re.fullmatch(r'-?\d{1,9}', s):
+        return int(s)
+    if re.fullmatch(r'-?\d{1,6}\.\d{1,6}', s):
+        return float(s)
+    if s == '':
+        return None
+    raise HTTPException(400, 'not a value for %s: %r' % (key, s[:40]))
+
+
 @app.get('/api/remote/settings/{slug}')
 def remote_settings(slug: str):
-    import tomllib
+    """A game's settings for the Deck: deck.toml's (values), what the Deck has under them (base: the
+    PC's settings with the kit's for the Deck, as `rexnative deck` makes them) and its language."""
     w = _work(slug)
+    files = games.settings_files(w)
+    base = {}
     try:
-        cur = tomllib.loads(games.read_text(games.settings_files(w)['deck']))
-    except (tomllib.TOMLDecodeError, OSError):
-        cur = {}
-    out = {}
-    for dotted in DECK_QUICK:
-        sec, key = dotted.split('.')
-        v = (cur.get(sec) or {}).get(key)
-        out[dotted] = '' if v is None else (str(v).lower() if isinstance(v, bool) else str(v))
-    return {'values': out}
+        dk = games.rexnative('deck')
+        text = games.read_text(files.get('pc') or '')
+        for sec, key, value in dk.DECK_SETTINGS:
+            text = dk.toml_set(text, sec, key, value)
+        base = _flat_toml(text)
+    except Exception:  # noqa: BLE001
+        pass
+    return {'values': _flat_toml(games.read_text(files['deck'])), 'base': base, 'language': _language_state(w)}
 
 
 @app.post('/api/remote/settings/{slug}')
 def remote_settings_save(slug: str, body: dict = Body(...)):
+    """The Deck page's Settings: its values in deck.toml, its language in the PC's and the Deck's
+    settings, and the game's settings sent to the Deck once (in place of the ones there)."""
     w = _work(slug)
-    def typed(v):
-        if v is None or v == '' or isinstance(v, (bool, int, float)):
-            return v
-        s = str(v).strip()
-        if s.lower() in ('true', 'false'):
-            return s.lower() == 'true'
-        if s.lstrip('-').isdigit():
-            return int(s)
-        return s
-    vals = {k: typed(v) for k, v in (body.get('values') or {}).items() if k in DECK_QUICK}
-    path = games.settings_files(w)['deck']
-    text = games.apply_values(games.read_text(path), vals)
-    err = games.validate_toml(text)
-    if err:
-        raise HTTPException(400, 'invalid TOML: %s' % err)
-    games.write_text(path, text)
+    vals = {k: _setting_value(k, v) for k, v in (body.get('values') or {}).items() if SETTING_KEY.match(k)}
+    if vals:
+        path = games.settings_files(w)['deck']
+        text = games.apply_values(games.read_text(path), vals)
+        err = games.validate_toml(text)
+        if err:
+            raise HTTPException(400, 'invalid TOML: %s' % err)
+        games.write_text(path, text)
+    if body.get('language') not in (None, ''):
+        _write_language(w, body.get('language'))
+    if not vals and body.get('language') in (None, ''):
+        return {'status': 'ok', 'changed': False}
     j = _from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True, wait=True))
     return _job(j)
 
@@ -2972,7 +3018,7 @@ def index():
     # a cópia velha da cache.
     static = os.path.join(HERE, 'static')
     html = open(os.path.join(static, 'index.html'), encoding='utf-8').read()
-    for name in ('app.js', 'rexlog.js', 'style.css'):
+    for name in ('app.js', 'rexlog.js', 'style.css', 'settings.js'):
         v = int(os.path.getmtime(os.path.join(static, name)))
         html = html.replace('/static/%s"' % name, '/static/%s?v=%d"' % (name, v))
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})

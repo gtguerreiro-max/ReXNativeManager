@@ -290,3 +290,7 @@ label.lang { display: inline-flex; align-items: center; gap: 6px; background: #f
   border-radius: 8px; padding: 4px 6px 4px 10px; font-size: 14.5px; }
 label.lang select { background: transparent; border: 0; color: var(--text); font: inherit; padding: 4px; }
 label.lang select option { background: var(--panel); }
+.setform .setgroup { grid-column: 1 / -1; font-size: 12px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--muted); font-weight: 700; margin-top: 10px; border-bottom: 1px solid #ffffff14; padding-bottom: 3px; }
+.setform .setgroup:first-child { margin-top: 0; }
+.setform label[title] { cursor: help; }

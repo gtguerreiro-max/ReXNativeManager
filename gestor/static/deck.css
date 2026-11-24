@@ -421,3 +421,8 @@ button.gch.focus, button.gch:focus { border-color: var(--accent); background: #f
 .stmore .mo img { width: 132px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; display: block; opacity: 1; }
 .stmore .mo span { display: block; font-size: 13.5px; margin-top: 6px; line-height: 1.25; }
 .langs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 14px 0 6px; }
+.optgroup { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--dim); font-weight: 800;
+  margin: 14px 4px 0; }
+.optgroup:first-child { margin-top: 2px; }
+.opt.edited .v { color: var(--warn); }
+.sethint { min-height: 44px; font-size: 14.5px; color: var(--muted); margin: 14px 4px 0; line-height: 1.45; }
