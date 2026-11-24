@@ -46,12 +46,14 @@ const GAME_SETTINGS = [
               ['Upscaler (DLSS / FSR)', { 'rexnative.upscaler': true }]],
     read: e => { if (String(e['rexnative.upscaler']) === 'true') return 4; const m = Number(e['rexnative.msaa']); return { 1: 0, 4: 2, 8: 3 }[m] ?? 1; },
     hint: 'The 3D scene\'s multisampling (most games draw 2x on the console), or the upscaler\'s temporal anti-aliasing (its options under Upscaler).' },
-  { id: 'scaling', group: 'Picture', label: 'Screen scaling', where: 'both', def: { 'rexnative.fsr': true },
+  // The PC's only: on the Deck's 1280x800 screen a 720p game is shown at its own size, and FSR 1
+  // never runs there (ReXNative's HUD hides them on the Deck too).
+  { id: 'scaling', group: 'Picture', label: 'Screen scaling', where: 'pc', def: { 'rexnative.fsr': true },
     choices: [['Bilinear', { 'rexnative.fsr': false }], ['AMD FSR 1', { 'rexnative.fsr': true }]],
-    hint: 'How the game\'s picture is scaled to the screen. FSR 1 keeps edges sharp; bilinear is softer.' },
-  { id: 'sharpening', group: 'Picture', label: 'FSR sharpening', where: 'both', def: { 'rexnative.fsr_sharpness': 0.2 },
+    hint: 'The last step: the finished picture (the game\'s resolution, its HUD on it) scaled up to a larger window. FSR 1 keeps edges sharp, bilinear is softer. FSR 4 and DLSS work earlier, on the 3D scene; for them up to the screen\'s size, use Resolution 2x or 3x.' },
+  { id: 'sharpening', group: 'Picture', label: 'FSR sharpening', where: 'pc', def: { 'rexnative.fsr_sharpness': 0.2 },
     choices: [['Soft', { 'rexnative.fsr_sharpness': 1 }], ['Medium', { 'rexnative.fsr_sharpness': 0.5 }], ['Sharp', { 'rexnative.fsr_sharpness': 0.2 }], ['Sharpest', { 'rexnative.fsr_sharpness': 0 }]],
-    hint: 'How much FSR 1 sharpens the scaled picture.' },
+    hint: 'How much FSR 1 sharpens the picture it scales up to the window.' },
   { id: 'anisotropy', group: 'Picture', label: 'Texture filtering', where: 'both', def: { 'rexnative.anisotropy': 16 },
     choices: [['Game\'s', { 'rexnative.anisotropy': 1 }], ['2x', { 'rexnative.anisotropy': 2 }], ['4x', { 'rexnative.anisotropy': 4 }], ['8x', { 'rexnative.anisotropy': 8 }], ['16x', { 'rexnative.anisotropy': 16 }]],
     hint: 'Anisotropic filtering: sharper ground seen at grazing angles. At the next start.' },

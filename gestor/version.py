@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.34.1'
+VERSION = '1.34.2'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.34.2', '2026-11-24', [
+        "Screen scaling and FSR sharpening are the PC's only: the last step, the finished picture "
+        "scaled up to a larger window with FSR 1, which never runs on the Deck (a 720p game is shown "
+        "at its own size on its 1280x800 screen); the in-game menu hides them there too (ReXNative "
+        "65e3321, after a rebuild). Their help says how they differ from the upscaler (FSR 4, DLSS, on "
+        "the 3D scene) and that Resolution 2x/3x takes the upscaler up to the screen's size.",
+    ]),
     ('1.34.1', '2026-11-24', [
         "The Deck no longer gets a PC's resolution scale, DLSS 5 or DLSS upscaler: Forza Horizon, set "
         "to 2x on the PC, came to the Deck at 2560x1440 with DLSS 5 tried and failing. The Deck's "
