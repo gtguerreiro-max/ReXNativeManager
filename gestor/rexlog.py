@@ -106,7 +106,8 @@ def _pattern(alias):
 def _games_md():
     """Os nomes da tabela de docs/GAMES.md do ReXNative (a primeira coluna)."""
     try:
-        txt = freshness._git('show', 'origin/main:docs/GAMES.md')
+        from . import config, rexrepo
+        txt = freshness._git('show', '%s:docs/GAMES.md' % rexrepo.upstream(config.load()['rexnative_dir']))
     except Exception:  # noqa: BLE001 - sem git: só a biblioteca
         return []
     out = []

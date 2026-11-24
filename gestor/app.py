@@ -196,20 +196,21 @@ def get_item(item: str):
     return data
 
 
-def _submit_pipeline(title, source=None, work=None, steps=None, after_deck=None):
+def _submit_pipeline(title, source=None, work=None, steps=None, after_deck=None, dlc=None):
     slug = catalog.slug(source) if source else os.path.basename(work)
     with _submit_lock:
         for j in manager.active(kind='pipeline', game=slug):
             raise HTTPException(409, 'there is already a job for %s (%s)' % (slug, j.id))
-        return manager.submit('pipeline', title, _pipeline_fn(source, work, steps, after_deck),
+        return manager.submit('pipeline', title, _pipeline_fn(source, work, steps, after_deck, dlc),
                               lane=pipeline.pipeline_lane(source), game=slug,
-                              params={'source': source, 'work': work, 'steps': steps, 'after_deck': after_deck})
+                              params={'source': source, 'work': work, 'steps': steps, 'after_deck': after_deck,
+                                      'dlc': dlc or None})
 
 
-def _pipeline_fn(source, work, steps, after_deck=None):
+def _pipeline_fn(source, work, steps, after_deck=None, dlc=None):
     def fn(job):
         with pipeline.lane_settings(job):  # the prepare lane works in its own copy of ReXNative
-            res = pipeline.run(job, source=source, work=work, steps=steps)
+            res = pipeline.run(job, source=source, work=work, steps=steps, dlc=dlc)
         if after_deck:
             sent = _submit_deck(res['work'], **after_deck)
             if isinstance(job.params, dict) and job.params.get('from_deck'):
@@ -443,18 +444,24 @@ def compat():
 @app.post('/api/prepare')
 def prepare_local(body: dict = Body(...)):
     """Prepara um jogo que já está no disco: um arquivo descarregado, ou um jogo teu (um dump numa
-    pasta, um .iso, um .7z/.zip/.rar, um pacote do Xbox Live)."""
+    pasta, um .iso, um .7z/.zip/.rar, um pacote do Xbox Live). dlc: os DLC desse jogo que tens
+    (pacotes do Xbox Live, arquivos ou pastas com eles), instalados depois do prepare."""
     kind, title, src = owngames.kind_of((body.get('path') or '').strip().strip('"'))
     if not kind:
         raise HTTPException(400, 'Cannot prepare that: %s' % title)
-    return _job(_submit_pipeline(title, source=src))
+    dlc = [str(p).strip().strip('"') for p in body.get('dlc') or [] if str(p).strip().strip('"')]
+    gone = [p for p in dlc if not os.path.exists(p)]
+    if gone:
+        raise HTTPException(400, 'DLC not found: %s' % '; '.join(gone))
+    return _job(_submit_pipeline(title, source=src, dlc=[os.path.abspath(p) for p in dlc]))
 
 
 # -- os teus jogos (owngames.py) -----------------------------------------------------------------
 @app.get('/api/own/pick')
 def own_pick(what: str = 'file'):
-    """A janela do Windows para escolher um ficheiro ou uma pasta (só nesta máquina)."""
-    return {'path': owngames.pick('folder' if what == 'folder' else 'file')}
+    """A janela do Windows para escolher um ficheiro ou uma pasta (só nesta máquina); com
+    what=dlc ficheiros de DLC (vários, um por linha) e com dlc-folder uma pasta deles."""
+    return {'path': owngames.pick(what if what in owngames.PICKS else 'file')}
 
 
 @app.post('/api/own/check')
@@ -2923,7 +2930,7 @@ def _r_pipeline(j):
     p = j.params or {}
     if not p.get('source') and not p.get('work'):
         return None
-    return _pipeline_fn(p.get('source'), p.get('work'), p.get('steps'), p.get('after_deck'))
+    return _pipeline_fn(p.get('source'), p.get('work'), p.get('steps'), p.get('after_deck'), p.get('dlc'))
 
 
 def _r_report(j):

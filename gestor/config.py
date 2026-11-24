@@ -22,6 +22,14 @@ DEFAULTS = {
     # Pastas com os teus jogos, como os tens (owngames.py): dumps (uma pasta com default.xex),
     # imagens .iso, arquivos .7z/.zip/.rar, pacotes do Xbox Live. Aparecem no catálogo.
     'own_dirs': [],
+    # De onde vêm os DLC dos jogos (o `--dlc` do prepare, REXNATIVE_DLC_SOURCES): pastas com um
+    # arquivo (.rar, .7z, .zip) por jogo, ou itens do Internet Archive com eles. Vazio: os jogos
+    # ficam sem DLC; nem o ReXNative nem a app trazem nenhuma fonte.
+    'dlc_sources': [],
+    # As atualizações: 'stable' segue as versões lançadas (o ramo stable do ReXNative e o do
+    # repositório da própria app, testados), 'dev' cada mudança (o main: para quem as testa). Um
+    # repositório ainda sem o ramo stable é seguido no main pelos dois.
+    'channel': 'stable',
     # Para onde vão os downloads e os jogos novos.
     'download_dir': os.path.join(BASE, 'downloads'),
     'work_dir': os.path.join(BASE, 'work'),
@@ -254,6 +262,9 @@ def tool_env(extra=None):
     env = dict(os.environ)
     cfg = load()
     env.update({k: str(v) for k, v in cfg['env'].items() if v})
+    dlc = [str(s).strip() for s in (cfg.get('dlc_sources') or []) if str(s).strip()]
+    if dlc:  # with a REXNATIVE_DLC_SOURCES of the environment's after them
+        env['REXNATIVE_DLC_SOURCES'] = ';'.join(dlc + [env.get('REXNATIVE_DLC_SOURCES', '')]).rstrip(';')
     host = cfg.get('deck_host')
     if host:
         env['REXNATIVE_DECK'] = host

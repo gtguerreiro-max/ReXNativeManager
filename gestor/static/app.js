@@ -1560,11 +1560,16 @@ function addOwnGame() {
   $('#dlgbody').innerHTML = `<h3 style="margin-top:0">Add your own game</h3>
     <p class="small muted">A game as you have it: a <b>dump folder</b> (with <code>default.xex</code>), a <b>disc image</b> (.iso),
       an <b>archive</b> (.7z, .zip, .rar) or an <b>Xbox Live package</b>. The app prepares, builds and tests it like a game from the
-      catalogue (nothing is downloaded but its title update and DLC); then install it on the Deck from My games.</p>
+      catalogue (nothing is downloaded but its title update, and DLC from your DLC sources in the Settings); then install it on the Deck from My games.</p>
     <input id="ownpath" style="width:100%" placeholder="The file or folder (paste its path, or choose it)" oninput="ownCheckSoon()">
     <div class="row" style="margin-top:8px"><button class="b" onclick="ownPick('file')">Choose a file…</button>
       <button class="b" onclick="ownPick('folder')">Choose a folder…</button></div>
     <p id="ownwhat" class="small" style="min-height:18px;margin:10px 0 0"></p>
+    <p class="small" style="margin:14px 0 6px"><b>Its DLC</b> <span class="muted">(optional): Xbox Live packages, archives (.rar, .7z, .zip) or folders with them, one per line.
+      Only the packages for this game are installed.</span></p>
+    <textarea id="owndlc" style="width:100%;min-height:54px" placeholder="Paste their paths, or choose them"></textarea>
+    <div class="row" style="margin-top:6px"><button class="b" onclick="ownPickDlc('dlc')">Choose DLC files…</button>
+      <button class="b" onclick="ownPickDlc('dlc-folder')">Choose a DLC folder…</button></div>
     <p class="small muted" style="margin-top:14px">A folder with many games? <a href="#" onclick="ownAddDir();return false">Add it to your game folders</a>:
       its games show in the catalogue, here and in Deck mode (where Install takes them straight to the Deck).</p>
     <div class="row" style="margin-top:16px;justify-content:flex-end"><button class="b" id="ownno">Cancel</button>
@@ -1572,8 +1577,18 @@ function addOwnGame() {
   d.showModal();
   $('#ownno').onclick = () => d.close();
   $('#ownok').onclick = async () => {
-    try { const j = await api('/api/prepare', { body: { path: $('#ownpath').value } }); d.close(); toast('Queued: ' + j.title); openJob(j.id); } catch (e) { fail(e); }
+    const dlc = $('#owndlc').value.split('\n').map(l => l.trim()).filter(Boolean);
+    try { const j = await api('/api/prepare', { body: { path: $('#ownpath').value, dlc } }); d.close(); toast('Queued: ' + j.title); openJob(j.id); } catch (e) { fail(e); }
   };
+}
+async function ownPickDlc(what) {
+  try {
+    const r = await api('/api/own/pick?what=' + what);
+    if (!r.path) return;
+    const box = $('#owndlc');
+    const have = box.value.split('\n').map(l => l.trim()).filter(Boolean);
+    box.value = have.concat(r.path.split('\n').filter(p => p && !have.includes(p))).join('\n');
+  } catch (e) { fail(e); }
 }
 async function ownPick(what) {
   $('#ownwhat').innerHTML = '<span class="muted">The Windows window is open (it may be behind the browser)…</span>';
@@ -1908,11 +1923,13 @@ const SETTINGS = [
   ['Sources and folders', [
     ['sources', 'Catalogue sources (item | label, one per line)', 'sources'],
     ['own_dirs', 'Your game folders: dumps (a folder with default.xex), .iso, .7z/.zip/.rar or Xbox Live packages (one folder per line)', 'lines'],
+    ['dlc_sources', 'DLC sources: a folder with an archive per game (.rar, .7z, .zip), or an archive.org item (its id or address), one per line. None: games are prepared without DLC', 'lines'],
     ['download_dir', 'Downloads folder'], ['work_dir', 'Folder for new games (prepare --work)'],
     ['work_roots', 'Folders with prepared games (one per line)', 'lines'],
     ['data_dir', 'App data (logs, covers, backups)'],
     ['max_downloads', 'Simultaneous downloads (restart the app)', 'int']]],
   ['ReXNative', [
+    ['channel', 'Updates of ReXNative and of this app: stable (the releases, tested) or dev (every change, for testing them)', 'select:stable,dev'],
     ['rexnative_dir', 'ReXNative copy to build with (worktree)'], ['python', 'Python (empty: the one the app uses)'],
     ['report_lane', 'Reports run beside the builds, in a ReXNative copy of their own', 'bool'],
     ['report_rexnative_dir', 'ReXNative copy for reports (empty: the one above with -reports)'],

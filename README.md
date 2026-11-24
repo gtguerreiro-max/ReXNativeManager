@@ -24,8 +24,8 @@ assistant fix what fails, and installs the result on a Steam Deck, which you the
 couch with the controller.
 
 > [!IMPORTANT]
-> No games, game sources or game data are in this repository, and the app ships with none: you add
-> the sources you want, and you need your own copy of each game.
+> No games, game sources, DLC sources or game data are in this repository, and the app ships with
+> none: you add the sources you want, and you need your own copy of each game.
 
 ## Features
 
@@ -109,14 +109,16 @@ From download to the Steam Deck:
    **Your own games** (`gestor/owngames.py`): **Add your own game…** (My games, Catalogue) takes a
    dump folder (with `default.xex`), a disc image (`.iso`), an archive (`.7z`, `.zip`, `.rar`) or an
    Xbox Live package (STFS), typed in or chosen in a Windows window, says what it found, and
-   prepares, builds and tests it. Settings > "Your game folders" (or "Add it to your game folders"
+   prepares, builds and tests it; the game's DLC you have (packages, archives or folders with them)
+   can go with it, and only that game's packages are installed. Settings > "Your game folders" (or "Add it to your game folders"
    there) lists folders the app looks through, four levels down: their games appear in the catalogue
    as the source **Your files**, in the PC app and in Deck mode, where **Install on the Deck** goes
    straight to preparing from your file (no download; a game of yours wins over a source's copy of
    the same game). Prepared games' folders and the downloads folder are left out.
 2. **Downloads**: only what you choose, with resume and MD5 verification.
 3. **Prepare, build and test**: `python -m rexnative prepare ... --title-update --dlc --project`
-   (title update from XboxUnity, DLC when available), then a boot test on the PC with
+   (title update from XboxUnity, DLC from the DLC sources you set in the Settings: folders with an
+   archive per game, or archive.org items; none set, no DLC), then a boot test on the PC with
    `scripts\live.ps1` (the game has to draw frames without crashing).
    The boot test takes renderer captures at 15, 30, 45 and 60 s (the app asks the renderer itself:
    `<run>\live\cap\capture.request`, no PowerShell per capture) and, right after each one, flips the

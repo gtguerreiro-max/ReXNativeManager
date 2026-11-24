@@ -2,7 +2,8 @@
 
 Quem trabalha noutras cópias não deve partilhar esta: numa pasta partilhada, os commits de uns
 levavam as alterações de outros e as compilações apanhavam trabalho a meio. Antes de cada tarefa a
-app põe esta na última versão publicada (origin/main), se não tiver nada por gravar; o assistente faz
+app põe esta na última versão publicada (origin/stable no canal stable, origin/main no dev: upstream),
+se não tiver nada por gravar; o assistente faz
 commit aqui e publica no main (quem pode) ou a app abre um pull request (github.py). Na primeira vez,
 se a pasta não existir, a app clona o ReXNative (rexnative_repo)."""
 import os
@@ -17,6 +18,16 @@ def _git(args, cwd, timeout=120):
     return r.returncode, (r.stdout or '').strip(), (r.stderr or '').strip()
 
 
+def upstream(d):
+    """What the copy follows: origin/stable (the releases) on the stable channel when the repository
+    has that branch, else origin/main (the dev channel: every change)."""
+    if config.get('channel') != 'dev':
+        rc, _, _ = _git(['rev-parse', '--verify', '-q', 'origin/stable'], d)
+        if rc == 0:
+            return 'origin/stable'
+    return 'origin/main'
+
+
 def status(fetch=False):
     d = config.load()['rexnative_dir']
     out = {'dir': d, 'exists': os.path.isdir(d)}
@@ -24,14 +35,15 @@ def status(fetch=False):
         return out
     if fetch:
         _git(['fetch', '-q', 'origin'], d, timeout=90)
+    ref = upstream(d)
     _, head, _ = _git(['log', '-1', '--format=%h %s'], d)
-    _, up, _ = _git(['log', '-1', '--format=%h %s', 'origin/main'], d)
+    _, up, _ = _git(['log', '-1', '--format=%h %s', ref], d)
     _, dirty, _ = _git(['status', '--porcelain', '--untracked-files=no'], d)
-    _, counts, _ = _git(['rev-list', '--left-right', '--count', 'HEAD...origin/main'], d)
+    _, counts, _ = _git(['rev-list', '--left-right', '--count', 'HEAD...' + ref], d)
     ahead, behind = (counts.split() + ['0', '0'])[:2]
     _, url, _ = _git(['remote', 'get-url', 'origin'], d)
     out.update(head=head, origin=up, dirty=[l for l in dirty.splitlines() if l.strip()],
-               ahead=int(ahead or 0), behind=int(behind or 0), url=web_url(url))
+               ahead=int(ahead or 0), behind=int(behind or 0), url=web_url(url), upstream=ref)
     return out
 
 
@@ -89,7 +101,7 @@ def ensure_lane_dir(lane):
             raise RuntimeError('no ReXNative copy yet (%s): build a game first' % base)
         _git(['fetch', '-q', 'origin'], base, timeout=90)
         _git(['worktree', 'prune'], base)
-        rc, _, err = _git(['worktree', 'add', '--detach', d, 'origin/main'], base, timeout=600)
+        rc, _, err = _git(['worktree', 'add', '--detach', d, upstream(base)], base, timeout=600)
         if rc != 0:
             raise RuntimeError('could not make the %s lane\'s copy of ReXNative (%s): %s. Its jobs can '
                                'run in the build lane instead: Settings, "%s" off'
@@ -126,8 +138,8 @@ def _take_unpublished(d, log):
         rc, head, _ = _git(['rev-parse', 'HEAD'], o)
         if rc != 0 or not head:
             continue
-        # Commits of origin/main..<the other HEAD> with no equal change here.
-        rc, out, _ = _git(['cherry', 'HEAD', head, 'origin/main'], d)
+        # Commits of <upstream>..<the other HEAD> with no equal change here.
+        rc, out, _ = _git(['cherry', 'HEAD', head, upstream(d)], d)
         new = [l[2:].strip() for l in out.splitlines() if l.startswith('+ ')] if rc == 0 else []
         if not new:
             continue
@@ -193,9 +205,9 @@ def _sync(log, job=None):
             ', '.join(x[3:] for x in st['dirty'][:5])))
         return st
     if st['ahead'] == 0:
-        rc, _, err = _git(['checkout', '-q', '--detach', 'origin/main'], d)
+        rc, _, err = _git(['checkout', '-q', '--detach', st['upstream']], d)
     else:
-        rc, _, err = _git(['rebase', '-q', 'origin/main'], d)
+        rc, _, err = _git(['rebase', '-q', st['upstream']], d)
         if rc != 0:
             _git(['rebase', '--abort'], d)
     st2 = status()

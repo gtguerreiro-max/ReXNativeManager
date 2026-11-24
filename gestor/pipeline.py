@@ -64,11 +64,28 @@ def step_prepare(job, ctx, attempt):
     rc = job.run(cmd, cwd=cfg['rexnative_dir'], env=config.tool_env(), log_path=log)
     prep = games._read_json(os.path.join(ctx['work'], 'prepare.json'))
     if rc == 0 and prep.get('ok'):
-        return True, {'summary': 'prepared and built%s' % prepare_times(log, ctx['slug'])}
+        return True, {'summary': 'prepared and built%s%s' % (prepare_times(log, ctx['slug']),
+                                                             own_dlc(job, ctx, cfg, log))}
     why = prep.get('error') or 'exit code %d' % rc
     return False, _fail('prepare', 'Preparation failed: %s' % why[:300], command=_cmdline(cmd),
                         cwd=cfg['rexnative_dir'], rc=rc, log_path=log, tail=jobs.tail(log, 220),
                         details='prepare.json error: %s\n' % prep.get('error') if prep.get('error') else '')
+
+
+def own_dlc(job, ctx, cfg, log):
+    """The DLC given with a game of yours (Add your own game): `rexnative dlc <work> <paths>`
+    installs the packages among them that are this game's. A failure leaves the game as it is,
+    without them (said in the summary), not a failed prepare."""
+    paths = [p for p in ctx.get('dlc') or [] if p]
+    if not paths:
+        return ''
+    rc = job.run(_rex(cfg) + ['dlc', ctx['work']] + paths, cwd=cfg['rexnative_dir'],
+                 env=config.tool_env(), log_path=log)
+    found = re.findall(r'^(\d+) package\(s\) installed', jobs.tail(log, 200), re.M)
+    if rc != 0 or not found:
+        job.event('info', 'Your DLC was not installed (code %d): see the prepare log' % rc)
+        return '; your DLC not installed'
+    return '; %s DLC package(s) of yours' % found[-1]
 
 
 def prepare_times(log, slug):
@@ -1381,11 +1398,12 @@ def selftest(job):
 
 
 # -- o pipeline --------------------------------------------------------------------------------
-def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True, quick=False):
+def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True, quick=False, dlc=None):
     """source: um arquivo descarregado (jogo novo: prepare); work: um jogo já preparado (build).
     steps: os passos a correr (por omissão prepare+boot ou build+boot). fallback: o renderizador
     clássico quando o nativo não passa (não nos testes de suspeitos nem nos relatórios, onde
-    esconderia o que a mudança estragou)."""
+    esconderia o que a mudança estragou). dlc: os DLC de um jogo teu (pacotes, arquivos ou pastas),
+    instalados depois do prepare."""
     cfg = config.load()
     slug = catalog.slug(source) if source else os.path.basename(os.path.abspath(work))
     # A game with its gameplay scene is compared there (the scene is the same frames every time):
@@ -1402,11 +1420,11 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
         steps = steps or ['build'] + tests
         quick = quick or played
     with game_turn(job, slug):
-        return _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg)
+        return _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg, dlc)
 
 
-def _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg):
-    ctx = {'source': source, 'work': work, 'slug': slug, 'quick': quick}
+def _run(job, source, work, slug, steps, auto_report, fallback, quick, cfg, dlc=None):
+    ctx = {'source': source, 'work': work, 'slug': slug, 'quick': quick, 'dlc': list(dlc or [])}
     if (source and xna.is_xna_name(source)) or xna.is_xna_work(work):
         job.event('fail', xna.UNSUPPORTED_PT)
         state.update('games', state.game_key(work), {'pipeline': {'job': job.id, 'status': 'failed',

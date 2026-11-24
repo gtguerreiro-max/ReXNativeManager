@@ -183,9 +183,13 @@ def kind_of(path):
     return None, 'not a game: use a dump folder, an .iso, a .7z/.zip/.rar or an Xbox Live package', None
 
 
+PICKS = ('file', 'folder', 'dlc', 'dlc-folder')
+
+
 def pick(what):
     """A janela do Windows para escolher um ficheiro ou uma pasta (a app corre neste PC): o caminho,
-    ou '' se se cancelou. Num processo à parte (o Tk quer o seu fio principal)."""
+    ou '' se se cancelou. 'dlc': os ficheiros de DLC de um jogo, vários (um caminho por linha);
+    'dlc-folder': uma pasta com eles. Num processo à parte (o Tk quer o seu fio principal)."""
     import subprocess
     import sys
     from . import jobs
@@ -193,13 +197,18 @@ def pick(what):
         "import tkinter as tk\n"
         "from tkinter import filedialog\n"
         "r = tk.Tk(); r.withdraw(); r.attributes('-topmost', True)\n"
-        "if %r == 'folder':\n"
+        "w = %r\n"
+        "if w == 'folder':\n"
         "    p = filedialog.askdirectory(title='Choose the game folder (a dump with default.xex) or a folder of games')\n"
+        "elif w == 'dlc-folder':\n"
+        "    p = filedialog.askdirectory(title='Choose a folder with the game DLC (packages or archives)')\n"
+        "elif w == 'dlc':\n"
+        "    p = chr(10).join(filedialog.askopenfilenames(title='Choose the game DLC: Xbox Live packages or archives',\n"
+        "        filetypes=[('All files (Xbox Live packages)', '*.*'), ('Archives', '*.7z *.zip *.rar')]))\n"
         "else:\n"
         "    p = filedialog.askopenfilename(title='Choose a game: a disc image, an archive or an Xbox Live package',\n"
         "        filetypes=[('Games', '*.iso *.7z *.zip *.rar'), ('All files (Xbox Live packages)', '*.*')])\n"
-        "print(p or '')\n") % what
+        "print(p or '')\n") % (what if what in PICKS else 'file')
     r = subprocess.run([sys.executable, '-c', code], capture_output=True, text=True, timeout=900,
                        encoding='utf-8', errors='replace', creationflags=getattr(jobs, 'CREATE_NO_WINDOW', 0))
-    p = (r.stdout or '').strip()
-    return os.path.normpath(p) if p else ''
+    return '\n'.join(os.path.normpath(p) for p in (r.stdout or '').strip().splitlines() if p.strip())

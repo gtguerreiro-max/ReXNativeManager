@@ -69,7 +69,8 @@ def _refresh():
     except (OSError, subprocess.SubprocessError):
         pass
     with _lock:
-        res = log('origin/main', 400)
+        from . import rexrepo
+        res = log(rexrepo.upstream(config.load()['rexnative_dir']), 400)
         _cache.update(at=time.time(), commits=res)
         if res:
             try:

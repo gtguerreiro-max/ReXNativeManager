@@ -8,10 +8,21 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.36.1'
+VERSION = '1.37.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.37.0', '2026-11-24', [
+        "DLC sources in the Settings (Sources and folders): folders with an archive per game (.rar, .7z, "
+        ".zip) or archive.org items. ReXNative no longer brings a DLC source of its own (its main from "
+        "2026-11-24): with none set, games are prepared without DLC.",
+        "Add your own game takes the game's DLC too: Xbox Live packages, archives or folders with them, "
+        "typed in or chosen; after the prepare, the packages that are this game's are installed.",
+        "Sem PC mode: dlc_sources in the Deck service's config.json, the same (Deck service 0.12.0).",
+        "Updates (Settings, ReXNative): stable, the default, follows the releases (the stable branch of "
+        "ReXNative and of this app, tested), dev every change on main. A repository without a stable "
+        "branch yet is followed on main by both.",
+    ]),
     ('1.36.1', '2026-11-24', [
         "Battery saver sits under Antialiasing in a game's Settings, as in the in-game menu (Picture "
         "page), whose Antialiasing now says \"- MSAA on the battery\" while the saver holds the "

@@ -29,17 +29,26 @@ def on_disk():
         return {'version': None, 'changes': []}
 
 
+def upstream():
+    """What the app follows: origin/stable (its releases) on the stable channel when its repository
+    has that branch, else origin/main (the dev channel)."""
+    if config.get('channel') != 'dev' and _git(['rev-parse', '--verify', '-q', 'origin/stable'])[0] == 0:
+        return 'origin/stable'
+    return 'origin/main'
+
+
 def _fetch_remote():
     try:
         rc, _, err = _git(['fetch', '-q', 'origin'], timeout=90)
         if rc != 0:
             raise RuntimeError(err[-200:] or 'git fetch failed')
-        rc, text, err = _git(['show', 'origin/main:gestor/version.py'])
+        ref = upstream()
+        rc, text, err = _git(['show', ref + ':gestor/version.py'])
         data = version.parse(text) if rc == 0 else {'version': None, 'changes': []}
-        _, counts, _ = _git(['rev-list', '--left-right', '--count', 'HEAD...origin/main'])
+        _, counts, _ = _git(['rev-list', '--left-right', '--count', 'HEAD...' + ref])
         ahead, behind = (counts.split() + ['0', '0'])[:2]
         _, dirty, _ = _git(['status', '--porcelain', '--untracked-files=no'])
-        data.update(ahead=int(ahead or 0), behind=int(behind or 0),
+        data.update(ahead=int(ahead or 0), behind=int(behind or 0), upstream=ref,
                     dirty=[l[3:] for l in dirty.splitlines() if l.strip()])
         _remote.update(data=data, error=None)
     except Exception as e:  # noqa: BLE001 - sem rede: fica o que se sabia
@@ -121,10 +130,13 @@ def update():
     if rem.get('dirty'):
         raise RuntimeError('The app folder has uncommitted changes (%s): not updating' % ', '.join(rem['dirty'][:5]))
     if rem.get('ahead'):
-        raise RuntimeError('The app folder has %d commit(s) not on GitHub: not updating' % rem['ahead'])
+        raise RuntimeError('The app folder has %d commit(s) not in %s: not updating%s' % (
+            rem['ahead'], rem.get('upstream', 'origin/main'),
+            ' (newer than the stable release: the dev channel follows them)'
+            if rem.get('upstream') == 'origin/stable' else ''))
     if not rem.get('behind'):
         return 'already up to date'
-    rc, out, err = _git(['pull', '-q', '--ff-only', 'origin', 'main'], timeout=180)
+    rc, out, err = _git(['merge', '-q', '--ff-only', rem.get('upstream') or 'origin/main'], timeout=180)
     if rc != 0:
         raise RuntimeError('git pull failed: %s' % (err or out)[-300:])
     _remote['at'] = 0
