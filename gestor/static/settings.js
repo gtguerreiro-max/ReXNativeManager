@@ -20,13 +20,14 @@ const GAME_SETTINGS = [
     hint: '60 keeps menus made for a console\'s 60 Hz at their speed on a faster display; 30 for a game the console ran at 30.' },
   { id: 'frame_latency', group: 'Display', label: 'Frame latency', where: 'both',
     def: { 'rexnative.frame_latency': 3, 'rexnative.frame_latency_auto': true },
-    choices: [['Auto (1-2)', { 'rexnative.frame_latency': 1, 'rexnative.frame_latency_auto': true }],
+    choices: [['Auto (1-3)', { 'rexnative.frame_latency': 1, 'rexnative.frame_latency_auto': true }],
               ['1', { 'rexnative.frame_latency': 1, 'rexnative.frame_latency_auto': false }],
               ['2', { 'rexnative.frame_latency': 2, 'rexnative.frame_latency_auto': false }],
               ['3', { 'rexnative.frame_latency': 3, 'rexnative.frame_latency_auto': false }]],
-    // As the HUD reads it: 1 with auto is Auto; otherwise the number, whatever auto says.
-    read: e => { const n = Number(e['rexnative.frame_latency']); return n <= 1 && String(e['rexnative.frame_latency_auto']) === 'true' ? 0 : Math.min(3, Math.max(1, n)); },
-    hint: 'Frames the game may run ahead of the screen: 1 responds soonest, 3 is the steadiest when the GPU is near its limit. Auto: 1, and 2 while frames would miss the screen at 1.' },
+    // As the HUD reads it: 1 or 2 with auto is Auto (2 is the automatic latency's, which may still
+    // go to 3); otherwise the number, whatever auto says.
+    read: e => { const n = Number(e['rexnative.frame_latency']); return n <= 2 && String(e['rexnative.frame_latency_auto']) === 'true' ? 0 : Math.min(3, Math.max(1, n)); },
+    hint: 'Frames the game may run ahead of the screen: 1 responds soonest, 3 is the steadiest when the GPU is near its limit or the game stutters. Auto: 1, then 2 and 3 while frames miss the screen or come late, each kept for good once it helps.' },
   { id: 'window_mode', group: 'Display', label: 'Window', where: 'pc', def: { 'ui.fullscreen': false, 'ui.fullscreen_exclusive': false },
     choices: [['Windowed', { 'ui.fullscreen': false }], ['Full screen', { 'ui.fullscreen': true, 'ui.fullscreen_exclusive': false }],
               ['Full screen (exclusive)', { 'ui.fullscreen': true, 'ui.fullscreen_exclusive': true }]],

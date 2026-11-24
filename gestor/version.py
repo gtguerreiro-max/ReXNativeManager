@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.37.0'
+VERSION = '1.37.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.37.1', '2026-11-24', [
+        "Frame latency in a game's Settings: Auto (1-3), as the in-game menu now says. The automatic "
+        "latency also goes from 2 to 3 where frames keep coming late at 2, and counts late frames, not "
+        "only slower ones, so a game at its own 30 fps that stutters goes up as well; each step is "
+        "kept for good once it helps (ReXNative 2967634, after a rebuild). Forza Horizon on the Steam "
+        "Deck: 1 to 10 frames over 50 ms in each 150 at 2, none at 3, with almost no added delay.",
+        "Frame rate \"Every 2nd refresh\" no longer drops a game that keeps its own 30 fps to 20 "
+        "(ReXNative 9985362), and Forza Horizon (title update 4) shows one step of its simulation "
+        "in each frame, not two and then none (ReXNative b8b8060, after Pinyon Shift's fix).",
+    ]),
     ('1.37.0', '2026-11-24', [
         "DLC sources in the Settings (Sources and folders): folders with an archive per game (.rar, .7z, "
         ".zip) or archive.org items. ReXNative no longer brings a DLC source of its own (its main from "
