@@ -55,6 +55,11 @@ couch with the controller.
 - **Deck mode:** the Manager on the Deck itself, fullscreen in Game Mode for the controller: your
   Deck games with each one's versions and fixes, the games on the PC, the catalogue (pick a game
   and it arrives in your library), requests, free space, **Play**, and reports from the Deck.
+- **FPS Boost:** a game's frame rate raised by Xenia canary's community patch ("60 FPS", "Unlock
+  FPS") for its exact version, as FPS Boost does on the newer Xboxes: On / Off on the game page
+  (Summary) or the game on the Deck page, applied by the next build (Build and test, Rebuild and
+  send, Rebuild all); nothing is built until you ask. Shown only where there is a patch, with its
+  notes (some games run too fast or glitch somewhere with it).
 - **Snapshots for reports:** in the game, the settings menu and Y save that moment (the picture
   and the next frames as a trace); the next report sends them, and Claude replays those frames.
 - **Achievements:** each game's Xbox 360 achievements (name, description, gamerscore, icon; secret

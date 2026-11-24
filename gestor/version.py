@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.29.4'
+VERSION = '1.30.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.30.0', '2026-11-24', [
+        "FPS Boost: a game's frame rate raised by Xenia canary's community patch (\"60 FPS\", "
+        "\"Unlock FPS\"), as FPS Boost does on the newer Xboxes. The game page (Summary) and the "
+        "game on the Deck page show it when there is a patch for the game's exact version, with its "
+        "notes; On / Off is the game's choice, and nothing is built until you ask (Build and test "
+        "on the PC, Rebuild and send on the Deck; Rebuild all applies it too). The build puts the "
+        "patch into the game's code (ReXNative's fps-boost, ReXGlue's patch 0047). Iron Brigade "
+        "went from 33 to 16.7 ms a frame; Fable II, Midnight Club LA, Blur, Asura's Wrath, The "
+        "Bureau and Brothers have one too.",
+    ]),
     ('1.29.4', '2026-11-23', [
         "Rebuild all on the Deck builds every game first and sends them after. It sent each game "
         "before building the next, so a Deck that went to sleep held the whole batch on the first "

@@ -886,6 +886,7 @@ function openDeckGame(slug) {
         ${g.achievements && g.achievements.count ? `<span>Achievements</span><b>${g.achievements.unlocked} of ${g.achievements.count} · ${g.achievements.got_score} of ${g.achievements.gamerscore} G</b>` : ''}
       </div>
       ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
+      <div id="fpsdeck"></div>
       <div class="acts">
         ${g.appid && g.in_library && g.complete ? `<button class="btn p f" data-hint="Play" onclick="playGame('${esc(g.slug)}')">▶ Play</button>` : ''}
         ${g.on_pc && (g.update || !g.complete || (!g.in_library && !g.pending_add)) ? `<button class="btn p f" data-hint="Send" onclick="updateGame('${esc(g.slug)}')">${g.update ? 'Update' : 'Complete'}</button>` : ''}
@@ -907,6 +908,32 @@ function openDeckGame(slug) {
     </div></div>`);
   if (mine) loadGameCard(slug);
   else $('#gcard').innerHTML = '';
+  if (g.on_pc && !isLocal()) loadFpsDeck(slug);
+}
+// FPS Boost (Xenia canary's frame rate patch, on the PC's build): shown only where there is one for
+// the game's version. The choice is the PC's; a rebuild applies it.
+async function loadFpsDeck(slug) {
+  let r;
+  try { r = await api('/api/remote/fps-boost/' + encodeURIComponent(slug), { timeout: 60000 }); }
+  catch (e) { return; }
+  const box = $('#fpsdeck');
+  if (!box || !r.available) return;
+  const g = deckGame(slug) || {};
+  const state = r.on ? (r.needs_build ? 'On: rebuild to apply it' : 'On, in this build')
+    : (r.needs_build ? 'Off: rebuild to take it out' : 'Off');
+  box.innerHTML = `<div class="note"><b>FPS Boost</b> · ${esc(state)}<br>
+    <span class="small">Xenia canary's "${esc(r.patch)}" patch for this version${r.desc ? ': ' + esc(r.desc) : ''}. Some games run too fast or glitch with it; the Deck holds 60 FPS only in the lighter ones.</span>
+    <div class="acts" style="margin-top:8px">
+      <button class="btn f" onclick="setFpsDeck('${esc(slug)}', ${r.on ? 'false' : 'true'})">${r.on ? 'Turn off' : 'Turn on'}</button>
+      ${r.needs_build && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(slug)}')">Rebuild and send</button>` : ''}
+    </div></div>`;
+}
+async function setFpsDeck(slug, on) {
+  try {
+    await api('/api/remote/fps-boost/' + encodeURIComponent(slug), { body: { on }, timeout: 60000 });
+    toast(`FPS Boost ${on ? 'on' : 'off'}: rebuild the game to apply it`);
+    loadFpsDeck(slug);
+  } catch (e) { toast(e.message, true); }
 }
 // Sem PC mode: the game moved between internal storage and the microSD card, its saves with it.
 function openMove(slug) {

@@ -420,7 +420,7 @@ function renderGame() {
   $('#dbody').innerHTML = h;
   if (curSub === 'capas') loadCovers();
   if (curSub === 'defs') fillQuickForms();
-  if (curSub === 'resumo') loadReports();
+  if (curSub === 'resumo') { loadReports(); loadFpsBoost(); }
   if (curSub === 'cenas') loadScenes();
   if (curSub === 'conquistas') loadAchievements();
 }
@@ -557,6 +557,8 @@ function gameSummary(g) {
       <button class="b s ${g.classic && g.classic[w] ? 'p' : ''}" onclick="setRenderer('${w}', true)">Classic</button>`).join('')}
   </div>
   <p class="muted small">Classic is ReXGlue's renderer (Xenia's): slower, but it draws what the native one can't yet; the HUD (F1 / View+Menu) switches at any time. On the Deck it only takes effect after resending with "replace the settings".</p>
+  <h3>FPS Boost</h3>
+  <div id="fpsbox" class="muted small">Looking for Xenia canary's frame rate patch for this game...</div>
   <div id="reportsbox"></div>
   <h3>PC</h3>
   <div class="row">
@@ -735,6 +737,41 @@ async function reportDialog() {
   try {
     const r = await api(`/api/games/${encodeURIComponent(slug)}/report`, { body });
     if (r.id) { toast('Claude will investigate'); openJob(r.id, slug); } else { toast('Report saved'); openGame(slug); }
+  } catch (e) { fail(e); }
+}
+// -- FPS Boost: Xenia canary's frame rate patch (rexnative fps-boost), chosen here, applied by the next build --
+async function loadFpsBoost() {
+  const slug = cur && cur.slug;
+  if (!slug) return;
+  let r;
+  try { r = await api(`/api/games/${encodeURIComponent(slug)}/fps-boost`); }
+  catch (e) { const b = $('#fpsbox'); if (b) b.textContent = e.message; return; }
+  const box = $('#fpsbox');
+  if (!box || !cur || cur.slug !== slug || curSub !== 'resumo') return;
+  box.className = '';
+  box.innerHTML = fpsBoostHtml(r);
+}
+function fpsBoostState(r) {
+  return r.on ? (r.needs_build ? 'On: the next build applies it' : 'On, in this build')
+    : (r.needs_build ? 'Off: the next build takes it out' : 'Off');
+}
+function fpsBoostHtml(r) {
+  if (!r.available) return `<p class="muted small">Not available: ${esc(r.reason || 'no patch')}.</p>`;
+  return `<div class="row">
+      <button class="b s ${r.on ? 'p' : ''}" onclick="setFpsBoost(true)">On</button>
+      <button class="b s ${r.on ? '' : 'p'}" onclick="setFpsBoost(false)">Off</button>
+      <span class="chip ${r.needs_build ? 'warn' : r.on ? 'ok' : ''}">${esc(fpsBoostState(r))}</span>
+      ${r.needs_build ? `<button class="b" onclick="runPipeline(['build','boot'])">Build and test now</button>` : ''}
+    </div>
+    <p class="muted small">Xenia canary's "${esc(r.patch)}" patch${r.author ? ' by ' + esc(r.author) : ''}, made for this version of the game (<a href="${esc(r.url)}" target="_blank" rel="noopener">${esc(r.file)}</a>)${r.desc ? ': ' + esc(r.desc) : '.'}
+    Like FPS Boost on the newer Xboxes, it changes how the game paces itself: the build puts it into the game's code, and the boot test shows the frame rate it reaches. Some games run too fast or show glitches somewhere with it (see the patch's notes); the Deck holds 60 FPS only in the lighter games. Nothing is built until you ask: build here, or use Rebuild on the Deck.</p>`;
+}
+async function setFpsBoost(on) {
+  try {
+    const r = await api(`/api/games/${encodeURIComponent(cur.slug)}/fps-boost`, { body: { on } });
+    const box = $('#fpsbox');
+    if (box) box.innerHTML = fpsBoostHtml(r);
+    toast(`FPS Boost ${on ? 'on' : 'off'}${r.needs_build ? ': the next build applies it' : ''}`);
   } catch (e) { fail(e); }
 }
 async function setRenderer(where, classic) {

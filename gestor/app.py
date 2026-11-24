@@ -781,6 +781,45 @@ def save_settings(slug: str, body: dict = Body(...)):
     return {'path': path, 'text': games.read_text(path)}
 
 
+# -- FPS Boost (rexnative fps-boost): o patch do Xenia canary que sobe o frame rate do jogo --------
+def _fps_boost(w, state=None):
+    """O FPS Boost de um jogo, como o ReXNative o vê (rexnative fps-boost --json): se o Xenia canary
+    tem um patch de frame rate para esta versão do executável, se está escolhido e se está na
+    compilação atual. state 'on'/'off' guarda a escolha; é a compilação seguinte que a aplica."""
+    cfg = config.load()
+    cmd = pipeline._rex(cfg) + ['fps-boost', w, '--json'] + ([state] if state else [])
+    for attempt in range(2):
+        try:
+            r = subprocess.run(cmd, cwd=cfg['rexnative_dir'], capture_output=True, text=True,
+                               encoding='utf-8', errors='replace', timeout=180,
+                               env=config.tool_env(), creationflags=jobs.CREATE_NO_WINDOW)
+        except (OSError, subprocess.SubprocessError) as e:
+            raise HTTPException(503, 'FPS Boost: %s' % e)
+        if r.returncode == 0:
+            try:
+                return json.loads(r.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                raise HTTPException(500, 'FPS Boost: ReXNative gave no answer')
+        err = (r.stderr or r.stdout or '').strip()
+        # Uma cópia do ReXNative de antes do FPS Boost: posta na versão publicada (como antes de
+        # cada tarefa), se nenhuma tarefa a estiver a usar, e outra vez.
+        if attempt == 0 and 'fps-boost' in err and 'invalid choice' in err and not manager.active():
+            rexrepo.sync()
+            continue
+        raise HTTPException(500, 'FPS Boost: %s' % (err.splitlines()[-1] if err else
+                                                     'code %d' % r.returncode))
+
+
+@app.get('/api/games/{slug}/fps-boost')
+def game_fps_boost(slug: str):
+    return _fps_boost(_work(slug))
+
+
+@app.post('/api/games/{slug}/fps-boost')
+def game_fps_boost_set(slug: str, body: dict = Body(...)):
+    return _fps_boost(_work(slug), 'on' if body.get('on') else 'off')
+
+
 @app.get('/api/games/{slug}/art/{name}')
 def art(slug: str, name: str):
     p = os.path.join(_work(slug), 'deck', 'art', os.path.basename(name))
@@ -2088,6 +2127,16 @@ def remote_install(slug: str, body: dict = Body(default={})):
     root = 'sd' if body.get('root') == 'sd' else None
     return _job(_from_deck(_submit_deck(w, action='install', try_seconds=0, steam=True, wait=True,
                                         root=root)))
+
+
+@app.get('/api/remote/fps-boost/{slug}')
+def remote_fps_boost(slug: str):
+    return _fps_boost(_work(slug))
+
+
+@app.post('/api/remote/fps-boost/{slug}')
+def remote_fps_boost_set(slug: str, body: dict = Body(...)):
+    return _fps_boost(_work(slug), 'on' if body.get('on') else 'off')
 
 
 @app.post('/api/remote/rebuild/{slug}')
