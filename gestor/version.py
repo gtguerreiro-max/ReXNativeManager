@@ -8,10 +8,26 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.34.2'
+VERSION = '1.35.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.35.0', '2026-11-24', [
+        "Automatic mode follows the PC while the Manager is open on the Deck, not only when it opens: "
+        "the PC gone (asleep, off) with the page on it, the page comes to the Deck; the PC back with "
+        "the page on the Deck and no one using it for a minute, the page goes to the PC (at most one "
+        "move every 2 minutes, never during a game; the Deck's launcher v6 opens it on its first tab).",
+        "Sem PC mode: a game the PC built and sent shows Update from the PC (a newer build on the PC) "
+        "or Complete from the PC (a transfer that did not finish) whenever the PC answers; the Deck's "
+        "service asks the PC to send it, as the Deck page does in PC mode (Deck service 0.11.0).",
+        "Sem PC builds get the SDK of the PC builds: the Deck's kit 6 has ReXGlue SDK 0045 to 0048 "
+        "(FPS Boost's game patches, the language for Diablo III and Geometry Wars 3, Xenos' 8-bit "
+        "texel reads, the tools' pad overlay); the games built on the Deck have them after a rebuild.",
+        "The Deck runs faster where FSR 4 left the GPU no room: FSR 4 costs about 5 ms a frame on the "
+        "Deck whatever the render size (Diablo III: 5.1 ms, FSR 3.1 3.1 ms), and a game whose GPU is "
+        "busy for 90 % of each frame now changes to FSR 3.1 for the rest of the run (ReXNative's "
+        "fsr_auto, after a rebuild); one the GPU has room for keeps FSR 4.",
+    ]),
     ('1.34.2', '2026-11-24', [
         "Screen scaling and FSR sharpening are the PC's only: the last step, the finished picture "
         "scaled up to a larger window with FSR 1, which never runs on the Deck (a 720p game is shown "

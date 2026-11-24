@@ -15,7 +15,7 @@ from . import config, deck, lan, state
 NAME = 'Gestor ReXNative'
 DIR = '.local/share/gestor-rexnative'  # na pasta do utilizador deck
 KIT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'deckkit')
-VERSION = 5  # o lançador (deckkit/): sobe quando os ficheiros mudam; a app avisa o Deck que tem um antigo
+VERSION = 6  # o lançador (deckkit/): sobe quando os ficheiros mudam; a app avisa o Deck que tem um antigo
 # 3: o modo (PC, Sem PC, Automático) no ficheiro mode, ao lado do gestor.conf
 # 4: a mudança de modo recomeça o Firefox (o ficheiro relaunch) em vez de passar a página
 # 5: nesse recomeço uma janela escura da app tapa o intervalo (o Steam não passa para a frente)

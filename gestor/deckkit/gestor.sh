@@ -131,11 +131,15 @@ while kill -0 "$fp" 2>/dev/null; do
     # Um segundo para a página dizer para onde vai; a janela escura; o Firefox fecha e abre outra
     # vez; quando a sua janela aparece (até 10 s; sem o xdotool, 3 s) a escura sai.
     sleep 1.5
+    # "home" (the Automatic mode following the PC, rexdeck's _auto_watch): the page opens on its
+    # first tab; a mode changed in Settings opens it there, the new mode in use.
+    tab="&tab=settings"
+    grep -q home "$rf" 2>/dev/null && tab=""
     rm -f "$rf"
     hold_window
     sleep 1
     close_ff "$fp"
-    open_ff "&tab=settings"
+    open_ff "$tab"
     launches=$((launches + 1))
     for i in $(seq 1 20); do
       kill -0 "$fp" 2>/dev/null || break

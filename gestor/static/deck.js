@@ -744,7 +744,7 @@ function renderDeck() {
   const sp = (h.deck.space || {}).interno;
   const tiles = gs.map(g => {
     const b = [];
-    if (g.update) b.push('<span class="bd g">Update</span>');
+    if (g.update || g.pc_update) b.push('<span class="bd g">Update</span>');
     else if (g.fresh && g.fresh.state === 'desatualizado') b.push('<span class="bd w">New fixes</span>');
     if (g.pending_add) b.push('<span class="bd i">Joining the library</span>');
     else if (!g.in_library) b.push('<span class="bd w">No shortcut</span>');
@@ -844,6 +844,14 @@ async function doFree(slugs) {
     setTimeout(() => refreshHome(), 4000);
   } catch (e) { toast(e.message, true); }
 }
+// Sem PC: the PC sends again a game it built (its newer build, or the rest of a transfer).
+async function pcSend(slug) {
+  try {
+    await api('/api/remote/pc-send/' + encodeURIComponent(slug), { body: {}, timeout: 30000 });
+    toast('The PC is sending it: it arrives in a few minutes');
+    closeAll();
+  } catch (e) { toast(e.message, true); }
+}
 // Os jogos que "Update all" e "Rebuild all" levam (as mesmas contas que o PC faz).
 function batchGames(mode) {
   return ((S.home || {}).games || []).filter(g => g.on_pc && !g.job && (mode === 'update'
@@ -887,6 +895,10 @@ function openDeckGame(slug) {
   // achievements work all the same; updating it or a report needs it built here first.
   const pcBuilt = isLocal() && !g.on_pc;
   const mine = g.on_pc || pcBuilt;
+  // Sem PC, a game the PC built: a newer build on the PC (or a transfer to finish) comes from it
+  // when it answers (the Deck's service asks the PC, as this page does in PC mode).
+  if (pcBuilt && g.pc_update) notes.push('A newer build is on the PC: Update from the PC sends it here.');
+  if (pcBuilt && g.pc_complete) notes.push('The transfer from the PC did not finish: Complete from the PC sends the rest.');
   const layer = openLayer(`<div class="sheet store">
     <div class="sthero" id="sthero"><div class="sthin">
       <div class="stbox">${img(g.title, g.slug)}</div>
@@ -900,6 +912,7 @@ function openDeckGame(slug) {
           ${g.appid && g.in_library && g.complete ? `<button class="btn p f" data-hint="Play" onclick="playGame('${esc(g.slug)}')">▶ Play</button>` : ''}
           ${g.on_pc && (g.update || !g.complete || (!g.in_library && !g.pending_add)) ? `<button class="btn p f" data-hint="Send" onclick="updateGame('${esc(g.slug)}')">${g.update ? 'Update' : 'Complete'}</button>` : ''}
           ${g.on_pc && stale && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(g.slug)}')">Rebuild and send</button>` : ''}
+          ${pcBuilt && (g.pc_update || g.pc_complete) && !g.job ? `<button class="btn p f" data-hint="Send" onclick="pcSend('${esc(g.slug)}')">${g.pc_complete ? 'Complete from the PC' : 'Update from the PC'}</button>` : ''}
           <button class="btn f" onclick="closeLayer()">Close</button>
         </div>
         ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
