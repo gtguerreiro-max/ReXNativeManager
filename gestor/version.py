@@ -8,10 +8,14 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.30.0'
+VERSION = '1.30.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.30.1', '2026-11-24', [
+        "Deck mode: FPS Boost on the On the PC tab too (the game's sheet), with Rebuild (and send "
+        "when the game is on the Deck).",
+    ]),
     ('1.30.0', '2026-11-24', [
         "FPS Boost: a game's frame rate raised by Xenia canary's community patch (\"60 FPS\", "
         "\"Unlock FPS\"), as FPS Boost does on the newer Xboxes. The game page (Summary) and the "

@@ -912,27 +912,31 @@ function openDeckGame(slug) {
 }
 // FPS Boost (Xenia canary's frame rate patch, on the PC's build): shown only where there is one for
 // the game's version. The choice is the PC's; a rebuild applies it.
-async function loadFpsDeck(slug) {
+// where: 'deck' (the Deck tab's sheet, #fpsdeck) or 'pc' (the On the PC tab's, #fpspc).
+async function loadFpsDeck(slug, where = 'deck') {
   let r;
   try { r = await api('/api/remote/fps-boost/' + encodeURIComponent(slug), { timeout: 60000 }); }
   catch (e) { return; }
-  const box = $('#fpsdeck');
+  const box = $(where === 'pc' ? '#fpspc' : '#fpsdeck');
   if (!box || !r.available) return;
-  const g = deckGame(slug) || {};
+  const g = (where === 'pc' ? pcGame(slug) : deckGame(slug)) || {};
   const state = r.on ? (r.needs_build ? 'On: rebuild to apply it' : 'On, in this build')
     : (r.needs_build ? 'Off: rebuild to take it out' : 'Off');
+  const rebuild = where === 'pc'
+    ? `<button class="btn p f" data-hint="Build" onclick="pcRebuild('${esc(slug)}')">${g.on_deck ? 'Rebuild and send' : 'Rebuild'}</button>`
+    : `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(slug)}')">Rebuild and send</button>`;
   box.innerHTML = `<div class="note"><b>FPS Boost</b> · ${esc(state)}<br>
-    <span class="small">Xenia canary's "${esc(r.patch)}" patch for this version${r.desc ? ': ' + esc(r.desc) : ''}. Some games run too fast or glitch with it; the Deck holds 60 FPS only in the lighter ones.</span>
+    <span class="small">Xenia canary's "${esc(r.patch)}" patch for this version${r.desc ? ': ' + esc(r.desc.replace(/\.\s*$/, '')) : ''}. Some games run too fast or glitch with it; the Deck holds 60 FPS only in the lighter ones.</span>
     <div class="acts" style="margin-top:8px">
-      <button class="btn f" onclick="setFpsDeck('${esc(slug)}', ${r.on ? 'false' : 'true'})">${r.on ? 'Turn off' : 'Turn on'}</button>
-      ${r.needs_build && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(slug)}')">Rebuild and send</button>` : ''}
+      <button class="btn f" onclick="setFpsDeck('${esc(slug)}', ${r.on ? 'false' : 'true'}, '${where}')">${r.on ? 'Turn off' : 'Turn on'}</button>
+      ${r.needs_build && !g.job ? rebuild : ''}
     </div></div>`;
 }
-async function setFpsDeck(slug, on) {
+async function setFpsDeck(slug, on, where = 'deck') {
   try {
     await api('/api/remote/fps-boost/' + encodeURIComponent(slug), { body: { on }, timeout: 60000 });
     toast(`FPS Boost ${on ? 'on' : 'off'}: rebuild the game to apply it`);
-    loadFpsDeck(slug);
+    loadFpsDeck(slug, where);
   } catch (e) { toast(e.message, true); }
 }
 // Sem PC mode: the game moved between internal storage and the microSD card, its saves with it.
@@ -1330,9 +1334,11 @@ function openPcGame(slug) {
       <h3>${esc(g.title)}</h3>
       ${meta ? `<div class="meta">${esc(meta)}</div>` : ''}
       <div class="facts">${rows.map(([k, t]) => `<span>${esc(k)}</span><b style="font-weight:500">${esc(t)}</b>`).join('')}</div>
+      <div id="fpspc"></div>
       <div class="acts">${acts.join('')}</div>
       <div id="pctune"></div>
     </div></div>`);
+  if (g.built && !g.xna) loadFpsDeck(slug, 'pc');
   api('/api/remote/tunings/' + encodeURIComponent(slug)).then(d => {
     const el = $('#pctune');
     if (el && (d.tunings || []).length) el.innerHTML = `<div class="sec"><h4>What ReXNative tunes for this game</h4>${d.tunings.map(t => `<div class="chg f" tabindex="-1"><b style="font-weight:600">${esc(t.k)}</b> · ${esc(t.t)}</div>`).join('')}</div>`;
