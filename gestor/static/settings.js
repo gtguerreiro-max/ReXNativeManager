@@ -48,6 +48,10 @@ const GAME_SETTINGS = [
     hint: 'The 3D scene\'s multisampling (most games draw 2x on the console), or the upscaler\'s temporal anti-aliasing (its options under Upscaler).' },
   // The PC's only: on the Deck's 1280x800 screen a 720p game is shown at its own size, and FSR 1
   // never runs there (ReXNative's HUD hides them on the Deck too).
+  // Under Antialiasing, which it acts on (the in-game menu has it there too).
+  { id: 'battery_saver', group: 'Picture', label: 'Battery saver', where: 'both', def: { 'rexnative.battery_saver': false },
+    choices: [['Off', { 'rexnative.battery_saver': false }], ['On', { 'rexnative.battery_saver': true }]],
+    hint: 'On the battery, the upscaler off and the console\'s anti-aliasing (MSAA) in its place: about a third less power on the Steam Deck (Overlord II: 4.7 W against 6.2). Back on the charger, the upscaler again. On the Deck by default; games built from 2026-11-24.' },
   { id: 'scaling', group: 'Picture', label: 'Screen scaling', where: 'pc', def: { 'rexnative.fsr': true },
     choices: [['Bilinear', { 'rexnative.fsr': false }], ['AMD FSR 1', { 'rexnative.fsr': true }]],
     hint: 'The last step: the finished picture (the game\'s resolution, its HUD on it) scaled up to a larger window. FSR 1 keeps edges sharp, bilinear is softer. FSR 4 and DLSS work earlier, on the 3D scene; for them up to the screen\'s size, use Resolution 2x or 3x.' },
@@ -70,9 +74,6 @@ const GAME_SETTINGS = [
               ['Ultra performance', { 'rexnative.upscaler_mode': 'ultra' }]],
     read: e => { const m = String(e['rexnative.upscaler_mode'] || 'native'); return Math.max(0, ['native', 'quality', 'balanced', 'performance', 'ultra'].indexOf(m === 'dlaa' ? 'native' : m)); },
     hint: 'Native AA keeps the game\'s resolution and only anti-aliases; the others render smaller (faster) and rebuild the picture.' },
-  { id: 'battery_saver', group: 'Upscaler', label: 'Battery saver', where: 'both', def: { 'rexnative.battery_saver': false },
-    choices: [['Off', { 'rexnative.battery_saver': false }], ['On', { 'rexnative.battery_saver': true }]],
-    hint: 'On the battery, the upscaler off and the console\'s anti-aliasing (MSAA) in its place: about a third less power on the Steam Deck (Overlord II: 4.7 W against 6.2). Back on the charger, the upscaler again. On the Deck by default; games built from 2026-11-24.' },
   { id: 'frame_generation', group: 'Upscaler', label: 'Frame generation (FSR)', where: 'both', def: { 'rexnative.frame_generation': false },
     choices: [['Off', { 'rexnative.frame_generation': false }], ['On', { 'rexnative.frame_generation': true }]],
     hint: 'A generated frame before each of the game\'s: twice the frames shown, the game at half the screen\'s rate (30 for 60 on the Steam Deck). Needs the upscaler.' },

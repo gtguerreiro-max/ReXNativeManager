@@ -8,10 +8,15 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.36.0'
+VERSION = '1.36.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.36.1', '2026-11-24', [
+        "Battery saver sits under Antialiasing in a game's Settings, as in the in-game menu (Picture "
+        "page), whose Antialiasing now says \"- MSAA on the battery\" while the saver holds the "
+        "upscaler off (ReXNative a0fcdac, after a rebuild).",
+    ]),
     ('1.36.0', '2026-11-24', [
         "Battery saver (a game's Settings, Upscaler): on the battery, the upscaler off and the "
         "console's anti-aliasing (MSAA) in its place, back on the charger the upscaler again. On the "
