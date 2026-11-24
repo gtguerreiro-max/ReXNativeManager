@@ -416,3 +416,7 @@ button.gch.focus, button.gch:focus { border-color: var(--accent); background: #f
 .shotview img { max-width: 94vw; max-height: 80vh; border-radius: 12px; box-shadow: 0 20px 60px #000; }
 .shotview .acts { display: flex; gap: 14px; align-items: center; }
 .stsrc { color: var(--dim); font-size: 13px; }
+.stmore { display: flex; gap: 14px; overflow-x: auto; padding: 4px 4px 10px; }
+.stmore .mo { flex: none; width: 132px; padding: 0; border: 0; background: none; color: var(--text); text-align: left; }
+.stmore .mo img { width: 132px; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 10px; display: block; opacity: 1; }
+.stmore .mo span { display: block; font-size: 13.5px; margin-top: 6px; line-height: 1.25; }

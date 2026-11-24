@@ -92,6 +92,53 @@ def short_genre(g):
     return g[:1].upper() + g[1:] if g else g
 
 
+GENRE_FIELD = re.compile(r'^\s*\|\s*genres?\s*=(.*?)(?=^\s*\||^\s*\}\})', re.M | re.S)
+
+
+def genres_from_wikitext(text):
+    """The genres of an article's infobox (| genre = [[Sports video game|Sports]] ([[snowboarding]]),
+    a list template, plain words): their short names, as short_genre makes them."""
+    m = GENRE_FIELD.search(text or '')
+    if not m:
+        return []
+    v = re.sub(r'<!--.*?-->|<ref[^>]*/>|<ref.*?</ref>', '', m.group(1), flags=re.S)
+    found = [label or target for target, label in re.findall(r'\[\[([^\]|]+)(?:\|([^\]]+))?\]\]', v)]
+    if not found:
+        plain = re.sub(r'\{\{\s*(?:plainlist|flatlist|ubl|unbulleted list|hlist)\s*\|?', '', v, flags=re.I)
+        found = [x for x in re.split(r',|;|<br\s*/?>|\*|\n|\}\}|\|', plain)]
+    out = []
+    for g in found:
+        g = short_genre(re.sub(r'[\'"()\[\]{}]', '', g).strip())
+        if g and len(g) <= 32 and g.lower() not in [x.lower() for x in out]:
+            out.append(g)
+    return out[:5]
+
+
+def _wiki_pages(titles, section0=False):
+    """{title asked: wikitext} for up to 50 articles (redirects followed); section0: the lead
+    section only (the infobox)."""
+    fields = {'action': 'query', 'prop': 'revisions', 'rvprop': 'content', 'rvslots': 'main',
+              'format': 'json', 'formatversion': '2', 'redirects': '1', 'titles': '|'.join(titles)}
+    if section0:
+        fields['rvsection'] = '0'
+    data = _post(WIKI_API, fields)
+    q = data.get('query', {})
+    back = {n['to']: n['from'] for n in q.get('redirects', [])}
+    back.update({n['to']: n['from'] for n in q.get('normalized', [])})
+    asked = set(titles)
+    out = {}
+    for pg in q.get('pages', []):
+        revs = pg.get('revisions') or []
+        if not revs:
+            continue
+        t = pg.get('title')
+        for cand in (t, back.get(t, ''), back.get(back.get(t, ''), '')):
+            if cand in asked:
+                out[cand] = revs[0].get('slots', {}).get('main', {}).get('content', '')
+                break
+    return out
+
+
 MC_PARAM = re.compile(r'\|\s*MC\s*=\s*(.*?)(?=\n\s*\||\n?\s*\}\})', re.S)
 SCORE = re.compile(r'(\d{1,3})\s*/\s*100')
 
@@ -184,6 +231,29 @@ def refresh(log=print):
                 found += 1
         time.sleep(1)
     log('Wikipedia: %d Metacritic scores from %d articles' % (found, len(todo)))
+    # More genres: each article's infobox (its lead section only, 50 articles a request). Wikidata
+    # gives many games a single genre; the infobox has what the game is ("Sports (snowboarding)").
+    arts = [(q, g['wiki']) for q, g in games.items() if g.get('wiki')]
+    by_t = {t: q for q, t in arts}
+    more = 0
+    for i in range(0, len(arts), 50):
+        try:
+            pages = _wiki_pages([t for _, t in arts[i:i + 50]], section0=True)
+        except (OSError, ValueError) as e:
+            log('Wikipedia: %s' % e)
+            continue
+        for t, text in pages.items():
+            g = games.get(by_t.get(t))
+            if g is None:
+                continue
+            have = [x.lower() for x in g['genres']]
+            for x in genres_from_wikitext(text):
+                if x.lower() not in have:
+                    g['genres'].append(x)
+                    have.append(x.lower())
+                    more += 1
+        time.sleep(1)
+    log('Wikipedia: %d more genres from %d infoboxes' % (more, len(arts)))
     data = {'fetched': time.time(), 'games': games}
     fsutil.write_json(_path(), data)
     with _lock:

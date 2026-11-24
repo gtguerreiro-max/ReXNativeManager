@@ -507,3 +507,9 @@ def prefetch_tids(tids):
         finally:
             _tid_fetch['busy'] = False
     threading.Thread(target=run, daemon=True, name='market-tids').start()
+
+
+def rating(title, xbla=None, tid=None):
+    """(the players' rating 0-5, how many rated) from the details already here, or (None, 0)."""
+    m = cached(tid or find_tid(title, xbla))
+    return ((m or {}).get('rating'), (m or {}).get('ratings') or 0)

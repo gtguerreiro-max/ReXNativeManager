@@ -887,42 +887,69 @@ function openDeckGame(slug) {
   // achievements work all the same; updating it or a report needs it built here first.
   const pcBuilt = isLocal() && !g.on_pc;
   const mine = g.on_pc || pcBuilt;
-  openLayer(`<div class="sheet detail">
-    <div class="big">${img(g.title, g.slug)}</div>
-    <div class="grow">
-      <h3>${esc(g.title)}</h3>
-      <div class="facts">
+  const layer = openLayer(`<div class="sheet store">
+    <div class="sthero" id="sthero"><div class="sthin">
+      <div class="stbox">${img(g.title, g.slug)}</div>
+      <div class="sthead">
+        <div class="stkick">${/-xbla/.test(g.slug) ? 'Xbox Live Arcade' : 'Xbox 360'} · on your Deck</div>
+        <h3>${esc(g.title)}</h3>
+        <div class="stby" id="stby"></div>
+        <div class="stgen" id="stgen"></div>
+        <div class="stscore" id="stscore"></div>
+        <div class="acts">
+          ${g.appid && g.in_library && g.complete ? `<button class="btn p f" data-hint="Play" onclick="playGame('${esc(g.slug)}')">▶ Play</button>` : ''}
+          ${g.on_pc && (g.update || !g.complete || (!g.in_library && !g.pending_add)) ? `<button class="btn p f" data-hint="Send" onclick="updateGame('${esc(g.slug)}')">${g.update ? 'Update' : 'Complete'}</button>` : ''}
+          ${g.on_pc && stale && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(g.slug)}')">Rebuild and send</button>` : ''}
+          <button class="btn f" onclick="closeLayer()">Close</button>
+        </div>
+        ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
+      </div></div></div>
+    <div class="stbody">
+      <div class="stmain">
+        <div id="fpsdeck"></div>
+        <div id="stdesc" class="stdesc"></div>
+        <div id="stshots"></div>
+        <h4>More</h4>
+        <div class="acts">
+          ${g.achievements && g.achievements.count ? `<button class="btn f" data-hint="Open" onclick="openAchievements('${esc(g.slug)}')">Achievements</button>` : ''}
+          ${pcBuilt && !g.job ? `<button class="btn f" data-hint="Build" onclick="openTakeover('${esc(g.slug)}')">Build on this Deck</button>` : ''}
+          ${mine ? `<button class="btn f" onclick="openSettings('${esc(g.slug)}')">Settings</button>` : ''}
+          ${g.on_pc ? `<button class="btn f" onclick="openReport('${esc(g.slug)}')">Report a problem</button>`
+            : pcBuilt ? `<button class="btn f" onclick="openTakeover('${esc(g.slug)}', true)">Report a problem</button>` : ''}
+          ${mine ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
+          ${isLocal() && !g.job && (g.where === 'sd' || ((S.home || {}).deck || {}).sd) ? `<button class="btn f" onclick="openMove('${esc(g.slug)}')">${g.where === 'sd' ? 'Move to internal storage' : 'Move to the microSD card'}</button>` : ''}
+          ${linuxButton(g)}
+          <button class="btn d f" onclick="confirmDelete('${esc(g.slug)}')">Delete from Deck</button>
+        </div>
+        ${g.on_pc ? '' : pcBuilt ? '<div class="note">The PC built this game. Play it, change its settings, restore its saves and see its achievements here; to update it, rebuild it or have Claude look at a problem on this Deck, build it here first (Build on this Deck).</div>'
+          : '<div class="note">This game is not in the PC folders: it can only be deleted.</div>'}
+        <div id="gcard"><div class="note">Reading the versions…</div></div>
+      </div>
+      <div class="stside">
+        <div id="stplay"></div>
+        <h4>On your Deck</h4>
+        <div class="facts">
         <span>Size</span><b>${gb(g.size)}</b>
         <span>Location</span><b>${g.where === 'sd' ? 'microSD card' : 'Internal storage'}</b>
         <span>Saves</span><b>${g.saves ? g.saves + ' save(s)' : 'none yet'}</b>
         <span>Last played</span><b>${g.last_played ? ago(g.last_played) : 'never'}</b>
         ${g.snapshots ? `<span>Snapshots</span><b>${g.snapshots} in the last day (newest ${ago(g.snapshot_at)})</b>` : ''}
         ${g.achievements && g.achievements.count ? `<span>Achievements</span><b>${g.achievements.unlocked} of ${g.achievements.count} · ${g.achievements.got_score} of ${g.achievements.gamerscore} G</b>` : ''}
+        </div>
+        <h4>Details</h4>
+        <div class="facts" id="stfacts"></div>
       </div>
-      ${notes.length ? `<div class="note">${notes.map(esc).join('<br>')}</div>` : ''}
-      <div id="fpsdeck"></div>
-      <div class="acts">
-        ${g.appid && g.in_library && g.complete ? `<button class="btn p f" data-hint="Play" onclick="playGame('${esc(g.slug)}')">▶ Play</button>` : ''}
-        ${g.on_pc && (g.update || !g.complete || (!g.in_library && !g.pending_add)) ? `<button class="btn p f" data-hint="Send" onclick="updateGame('${esc(g.slug)}')">${g.update ? 'Update' : 'Complete'}</button>` : ''}
-        ${g.on_pc && stale && !g.job ? `<button class="btn p f" data-hint="Rebuild" onclick="rebuildGame('${esc(g.slug)}')">Rebuild and send</button>` : ''}
-        ${g.achievements && g.achievements.count ? `<button class="btn f" data-hint="Open" onclick="openAchievements('${esc(g.slug)}')">Achievements</button>` : ''}
-        ${pcBuilt && !g.job ? `<button class="btn f" data-hint="Build" onclick="openTakeover('${esc(g.slug)}')">Build on this Deck</button>` : ''}
-        ${mine ? `<button class="btn f" onclick="openSettings('${esc(g.slug)}')">Settings</button>` : ''}
-        ${g.on_pc ? `<button class="btn f" onclick="openReport('${esc(g.slug)}')">Report a problem</button>`
-          : pcBuilt ? `<button class="btn f" onclick="openTakeover('${esc(g.slug)}', true)">Report a problem</button>` : ''}
-        ${mine ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
-        ${isLocal() && !g.job && (g.where === 'sd' || ((S.home || {}).deck || {}).sd) ? `<button class="btn f" onclick="openMove('${esc(g.slug)}')">${g.where === 'sd' ? 'Move to internal storage' : 'Move to the microSD card'}</button>` : ''}
-        ${linuxButton(g)}
-        <button class="btn d f" onclick="confirmDelete('${esc(g.slug)}')">Delete from Deck</button>
-        <button class="btn f" onclick="closeLayer()">Close</button>
-      </div>
-      ${g.on_pc ? '' : pcBuilt ? '<div class="note">The PC built this game. Play it, change its settings, restore its saves and see its achievements here; to update it, rebuild it or have Claude look at a problem on this Deck, build it here first (Build on this Deck).</div>'
-        : '<div class="note">This game is not in the PC folders: it can only be deleted.</div>'}
-      <div id="gcard"><div class="note">Reading the versions…</div></div>
     </div></div>`);
   if (mine) loadGameCard(slug);
   else $('#gcard').innerHTML = '';
   if (g.on_pc && !isLocal()) loadFpsDeck(slug);
+  storeFill(layer, { title: g.title, year: null, mc: null }, { slug: g.on_pc ? g.slug : null, title: g.title, xbla: /-xbla/.test(g.slug) });
+}
+// A store page's data for a sheet already open (the Deck tab's and the On the PC tab's games).
+function storeFill(layer, g, o) {
+  const q = new URLSearchParams({ title: o.title, xbla: o.xbla ? 1 : 0 });
+  if (o.slug) q.set('slug', o.slug);
+  api('/api/remote/card?' + q, { timeout: 30000 }).then(c => fillStore(layer, g, c)).catch(() => {});
 }
 // FPS Boost (Xenia canary's frame rate patch, on the PC's build): shown only where there is one for
 // the game's version. The choice is the PC's; a rebuild applies it.
@@ -1342,17 +1369,34 @@ function openPcGame(slug) {
     if ((S.home || {}).linux_enabled && g.built && !g.xna) acts.push(`<button class="btn f" onclick="confirmLinuxBuild('${esc(g.slug)}')">${g.linux_built ? 'Rebuild for Linux' : 'Build for Linux'} (experimental)</button>`);
   }
   acts.push('<button class="btn f" onclick="closeLayer()">Close</button>');
-  openLayer(`<div class="sheet detail">
-    <div class="big">${img(g.title, g.art ? g.slug : null)}</div>
-    <div class="grow">
-      <h3>${esc(g.title)}</h3>
-      ${meta ? `<div class="meta">${esc(meta)}</div>` : ''}
-      <div class="facts">${rows.map(([k, t]) => `<span>${esc(k)}</span><b style="font-weight:500">${esc(t)}</b>`).join('')}</div>
-      <div id="fpspc"></div>
-      <div class="acts">${acts.join('')}</div>
-      <div id="pctune"></div>
+  const layer = openLayer(`<div class="sheet store">
+    <div class="sthero" id="sthero"><div class="sthin">
+      <div class="stbox">${img(g.title, g.art ? g.slug : null)}</div>
+      <div class="sthead">
+        <div class="stkick">${/-xbla/.test(g.slug) ? 'Xbox Live Arcade' : 'Xbox 360'} · on the PC</div>
+        <h3>${esc(g.title)}</h3>
+        <div class="stby" id="stby">${esc(meta)}</div>
+        <div class="stgen" id="stgen">${(g.genres || []).map(x => `<span>${esc(x)}</span>`).join('')}</div>
+        <div class="stscore" id="stscore">${g.mc ? `<span class="mcs ${g.mc >= 75 ? 'h' : g.mc >= 50 ? 'm' : 'l'}">${g.mc}</span> Metacritic` : ''}</div>
+        <div class="acts">${acts.join('')}</div>
+      </div></div></div>
+    <div class="stbody">
+      <div class="stmain">
+        <div id="fpspc"></div>
+        <div id="stdesc" class="stdesc"></div>
+        <div id="stshots"></div>
+        <div id="pctune"></div>
+      </div>
+      <div class="stside">
+        <div id="stplay"></div>
+        <h4>On the PC</h4>
+        <div class="facts">${rows.map(([k, t]) => `<span>${esc(k)}</span><b style="font-weight:500">${esc(t)}</b>`).join('')}</div>
+        <h4>Details</h4>
+        <div class="facts" id="stfacts"></div>
+      </div>
     </div></div>`);
   if (g.built && !g.xna) loadFpsDeck(slug, 'pc');
+  storeFill(layer, { title: g.title, year: g.year, mc: g.mc }, { slug: g.slug, title: g.title, xbla: /-xbla/.test(g.slug) });
   api('/api/remote/tunings/' + encodeURIComponent(slug)).then(d => {
     const el = $('#pctune');
     if (el && (d.tunings || []).length) el.innerHTML = `<div class="sec"><h4>What ReXNative tunes for this game</h4>${d.tunings.map(t => `<div class="chg f" tabindex="-1"><b style="font-weight:600">${esc(t.k)}</b> · ${esc(t.t)}</div>`).join('')}</div>`;
@@ -1403,7 +1447,7 @@ async function loadCatalog() {
     if (S.tab === 'catalog' && !S.layers.length) { const id = S.cur && S.cur.dataset.id; renderCatalog(); const el = id && $$('.f', $('#v-catalog')).find(e => e.dataset.id === id); if (el) focus(el, false); }
   } catch (e) { /* tenta outra vez mais tarde */ }
 }
-const SORTS = [['name', 'Name'], ['mc', 'Metacritic'], ['year', 'Year'], ['size', 'Size']];
+const SORTS = [['name', 'Name'], ['mc', 'Metacritic'], ['rating', 'Players\' rating'], ['year', 'Year'], ['size', 'Size']];
 const KINDS = [['all', 'All'], ['xbla', 'Arcade (XBLA)'], ['disc', 'Discs'], ['deck', 'On Deck'], ['mine', 'Your files']];
 // Filtrar e ordenar os jogos todos só quando o filtro ou o catálogo mudam (era a cada passo do foco).
 function filtered() {
@@ -1419,6 +1463,8 @@ function filterNow() {
     (f.kind === 'all' || (f.kind === 'xbla' && g.xbla) || (f.kind === 'disc' && !g.xbla) || (f.kind === 'deck' && g.on_deck) || (f.kind === 'mine' && g.own)) &&
     (!f.genre || (g.genres || []).includes(f.genre)));
   if (f.sort === 'mc') gs = gs.slice().sort((a, b) => (b.mc || 0) - (a.mc || 0));
+  // Weighed by how many rated (few ratings pull it to 3.5): ratings only the catalogue's details have.
+  else if (f.sort === 'rating') { const w = x => x.rating == null ? -1 : (x.rating * (x.ratings || 0) + 3.5 * 2000) / ((x.ratings || 0) + 2000); gs = gs.slice().sort((a, b) => w(b) - w(a)); }
   else if (f.sort === 'year') gs = gs.slice().sort((a, b) => (b.year || 0) - (a.year || 0));
   else if (f.sort === 'size') gs = gs.slice().sort((a, b) => a.size - b.size);
   return gs;
@@ -1556,7 +1602,18 @@ function fillStore(layer, g, c) {
   if ((c.developers || []).length) extra.push(['Developer', c.developers.join(', ')]);
   if ((c.publishers || []).length) extra.push(['Publisher', c.publishers.join(', ')]);
   if (c.released) extra.push(['Released', new Date(c.released + 'T00:00:00').toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })]);
+  if (c.achievements && c.achievements.count) extra.push(['Achievements', `${c.achievements.count} · ${c.achievements.gamerscore} G`]);
   $('#stfacts', el).insertAdjacentHTML('afterbegin', extra.map(([k, v]) => `<span>${esc(k)}</span><b>${esc(v)}</b>`).join(''));
+  // More like this: the catalogue's games with the most genres in common (then the best rated).
+  const want = new Set((c.genres || []).map(x => x.toLowerCase()));
+  const skip = new Set([g.title, c.title].filter(Boolean).map(x => x.toLowerCase()));
+  const more = want.size ? (S.cat || []).filter(x => !skip.has(x.title.toLowerCase()))
+    .map(x => ({ x, n: (x.genres || []).filter(y => want.has(y.toLowerCase())).length })).filter(r => r.n > 0)
+    .sort((a, b) => b.n - a.n || ((b.x.rating || 0) * 20 + (b.x.mc || 0)) - ((a.x.rating || 0) * 20 + (a.x.mc || 0)))
+    .slice(0, 8).map(r => r.x) : [];
+  if (more.length && $('#stshots', el)) $('#stshots', el).insertAdjacentHTML('afterend', `<h4>More like this</h4><div class="stmore">${more.map(x =>
+    `<button class="f mo" data-hint="Open" onclick="closeLayer();openCatGame(${JSON.stringify(x.key).replace(/"/g, '&quot;')})">
+      ${img(x.title, x.art ? x.local : null, x.xbla)}<span>${esc(x.title)}</span></button>`).join('')}</div>`);
 }
 function viewShot(i) {
   const l = S.layers[S.layers.length - 1];

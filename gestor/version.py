@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.31.2'
+VERSION = '1.32.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.32.0', '2026-11-24', [
+        "More genres: each game's Wikipedia infobox adds what Wikidata and the store leave out "
+        "(SSX: Sports and Snowboarding; 1037 genres more over the catalogue).",
+        "The Deck's own games and the On the PC tab open as store pages too: the picture, genres, "
+        "ratings, description, screenshots and play modes, with Play, Update or Rebuild at the "
+        "top and the rest below.",
+        "Store pages show the achievements (count and gamerscore) and a row of games like it from "
+        "your catalogue; the PC catalogue and the Deck's sort by the players' rating (weighed by "
+        "how many rated), and the covers show it.",
+    ]),
     ('1.31.2', '2026-11-24', [
         "Store pages: a short name the store writes in capitals stays so (SSX, not \"Ssx\" from the "
         "file name, also on the Deck); HDTV without a resolution for the games read before 1.31.1 too.",

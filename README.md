@@ -36,9 +36,11 @@ couch with the controller.
   list), genres, year and Metacritic score; search, filters, and downloads with resume and MD5 checks.
 - **Store pages:** a game opens like a page of the Xbox store, on the PC and on the Deck: its
   background, box, every genre the Xbox 360 Marketplace and Wikidata give it, the players' rating,
-  Metacritic, the description, screenshots, play modes (players, co-op, online) and details. From
-  Microsoft's own Xbox 360 Marketplace catalogue (no account or key), kept a month; the game page
-  on the PC opens with the same picture, Play and the store page.
+  Metacritic, the description, screenshots, play modes (players, co-op, online), achievements,
+  details and games like it from your catalogue. From Microsoft's own Xbox 360 Marketplace
+  catalogue (no account or key), kept a month, with genres from Wikidata and each game's Wikipedia
+  infobox; the game page on the PC, the Deck's own games and the On the PC tab open with the same
+  picture. The catalogues sort by the players' rating too.
 - **Build and test on the PC:** prepare, build and boot each game; captures of the native
   renderer and the classic one at the same moment, compared by a model that sees images; a second
   test with the Steam Deck's settings; the classic renderer instead of an error when the native one

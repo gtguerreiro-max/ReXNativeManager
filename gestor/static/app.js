@@ -1257,7 +1257,11 @@ function catRows() {
     (!$('#chidebad').checked || !e.unsupported));
   const mc = e => e.info && e.info.mc != null ? e.info.mc : -1;
   const yr = e => e.info && e.info.year ? e.info.year : 0;
-  if (sort === 'mc') rows.sort((a, b) => mc(b) - mc(a) || a.title.localeCompare(b.title));
+  // The players' rating weighed by how many rated (as stores rank): few ratings pull it to 3.5, so
+  // 5.0 from 68 players is not above 4.5 from 300 000.
+  const rt = e => e.info && e.info.rating != null ? (e.info.rating * (e.info.ratings || 0) + 3.5 * 2000) / ((e.info.ratings || 0) + 2000) : -1;
+  if (sort === 'rating') rows.sort((a, b) => rt(b) - rt(a) || a.title.localeCompare(b.title));
+  else if (sort === 'mc') rows.sort((a, b) => mc(b) - mc(a) || a.title.localeCompare(b.title));
   else if (sort === 'year') rows.sort((a, b) => yr(b) - yr(a) || a.title.localeCompare(b.title));
   else if (sort === 'size') rows.sort((a, b) => a.size - b.size);
   return rows;
@@ -1307,6 +1311,7 @@ function catTile(e, i) {
       ${mc ? `<div class="mcb ${mc >= 75 ? 'h' : mc >= 50 ? 'm' : 'l'}">${mc}</div>` : ''}</div>
     <div class="nm">${esc(e.title)}</div>
     <div class="sub">${[e.info && e.info.year, g].filter(Boolean).map(esc).join(' · ') || '&nbsp;'}</div>
+    ${e.info && e.info.rating != null ? `<div class="sub"><span class="stars sm">★</span> ${e.info.rating.toFixed(1)} <span class="muted">· ${(e.info.ratings || 0).toLocaleString()} ratings</span></div>` : ''}
     <div class="sub">${esc([gb(e.size), (e.tags || []).join(' ')].filter(Boolean).join(' · '))}</div></div>`;
 }
 function renderCatalog() {
@@ -1396,7 +1401,9 @@ function storeHtml(c, o) {
   if ((e.tags || []).length) facts.push(['Region', e.tags.join(', ')]);
   if (e.source) facts.push(['Source', e.own ? 'Your files' : e.source]);
   if (e.name) facts.push(['File', e.name]);
+  if (c.achievements && c.achievements.count) facts.push(['Achievements', `${c.achievements.count} · ${c.achievements.gamerscore} G${c.achievements.unlocked ? ` (${c.achievements.unlocked} unlocked)` : ''}`]);
   if (c.tid) facts.push(['Title ID', c.tid]);
+  storeMore = similarGames(c.genres || [], [c.title, o.title, e.title]);
   const desc = (c.description || '').split(/\n{2,}/).map(p => `<p>${esc(p.trim())}</p>`).join('');
   return `<div class="st-wrap"><button class="st-x" onclick="closeStore()" title="Close (Esc)">✕</button>
     <div class="st-hero" ${bg ? `style="--hero:url('${bg}')"` : ''}><div class="st-hin">
@@ -1416,7 +1423,9 @@ function storeHtml(c, o) {
       <div class="st-main">
         ${desc ? `<div class="st-desc">${desc}<div class="small muted">${c.description_from === 'store' ? 'From the Xbox 360 Marketplace' : 'From Wikipedia'}${c.wiki ? ` · <a href="${esc(c.wiki)}" target="_blank" rel="noopener">Wikipedia</a>` : ''}</div></div>`
           : `<p class="muted">No description${c.pending ? ' yet: the Marketplace list is still being read, try again in a minute' : ''}.</p>`}
-        ${storeShots.length ? `<h3>Screenshots</h3><div class="st-shots">${storeShots.map((u, i) => `<button onclick="storeView(${i})"><img loading="lazy" src="${u}" alt=""></button>`).join('')}</div>` : ''}
+        ${storeShots.length ? `<h3>Screenshots</h3><div class="st-shots">${storeShots.slice(0, 6).map((u, i) => `<button onclick="storeView(${i})"><img loading="lazy" src="${u}" alt="">${i === 5 && storeShots.length > 6 ? `<span class="st-plus">+${storeShots.length - 6}</span>` : ''}</button>`).join('')}</div>` : ''}
+        ${storeMore.length ? `<h3>More like this</h3><div class="st-more">${storeMore.map((x, i) => `<button onclick="openStoreMore(${i})" title="${esc(x.title)}">
+          <img loading="lazy" src="${catCover(x)}" alt=""><span>${esc(x.title)}</span></button>`).join('')}</div>` : ''}
       </div>
       <aside class="st-side">
         ${(c.modes || []).length ? `<h3>Play</h3><div class="kv">${c.modes.map(([k, v]) => `<div>${esc(k)}</div><div>${esc(v)}</div>`).join('')}</div>` : ''}
@@ -1427,6 +1436,26 @@ function storeHtml(c, o) {
     <div class="st-view" id="stview" onclick="if(event.target===this)storeViewClose()"><button class="st-x" onclick="storeViewClose()">✕</button>
       <button class="st-nav l" onclick="storeView(storeShot-1)">‹</button><img id="stvimg" alt=""><button class="st-nav r" onclick="storeView(storeShot+1)">›</button></div>
   </div>`;
+}
+// More like this: the catalogue's games with the most genres in common (then the best rated).
+let storeMore = [];
+function similarGames(genres, not) {
+  if (!cat || !(genres || []).length) return [];
+  const want = new Set(genres.map(x => x.toLowerCase()));
+  const skip = new Set(not.filter(Boolean).map(x => x.toLowerCase()));
+  const seen = new Set();
+  return cat.entries.filter(x => x.info && !skip.has(x.title.toLowerCase()) && !x.unsupported)
+    .map(x => ({ x, n: (x.info.genres || []).filter(g => want.has(g.toLowerCase())).length }))
+    .filter(r => r.n > 0)
+    .sort((a, b) => b.n - a.n || ((b.x.info.rating || 0) * 20 + (b.x.info.mc || 0)) - ((a.x.info.rating || 0) * 20 + (a.x.info.mc || 0)))
+    .map(r => r.x).filter(x => !seen.has(x.title.toLowerCase()) && seen.add(x.title.toLowerCase())).slice(0, 8);
+}
+function openStoreMore(i) {
+  const e = storeMore[i];
+  if (!e) return;
+  const acts = entryActions(e).replace(/class="b s( p)?"/g, (m, p) => `class="b${p ? ' p' : ''} big"`) +
+    (e.local ? ` <button class="b big" onclick="closeStore();openGame('${esc(e.local)}')">Open in My games</button>` : '');
+  openStore({ title: e.title, xbla: e.xbla, slug: e.local || null, entry: e, acts, cover: catCover(e) });
 }
 function storeView(i) {
   const v = $('#stview');

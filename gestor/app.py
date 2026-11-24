@@ -141,8 +141,12 @@ def get_catalog(refresh: bool = False):
         e['job'] = active.get((e['item'], e['name']))
         e['info'] = info.compact(e['title'])
         e['xbla'] = _is_xbla(e)
+        gen = market.genres(e['title'], e['xbla'], (info.find(e['title']) or {}).get('genres'))[:3]
+        r, n = market.rating(e['title'], e['xbla'])
+        if e['info'] is None and (gen or r is not None):
+            e['info'] = {'genres': [], 'year': None, 'mc': None}
         if e['info'] is not None:
-            e['info']['genres'] = market.genres(e['title'], e['xbla'], (info.find(e['title']) or {}).get('genres'))[:3]
+            e['info'].update(genres=gen, rating=r, ratings=n)
         if (xna_seen.get(e['name']) or {}).get('xna'):
             e['unsupported'] = 'XNA'
     market.prefetch(sorted({(e['title'], e['xbla']) for e in items}))
@@ -1819,6 +1823,7 @@ def remote_catalog(since: str = None):
                          'size': e['size'], 'source': e['source'], 'xbla': xbla,
                          'own': owngames.KINDS.get(e.get('kind')) if e.get('own') else None,
                          'genres': market.genres(e['title'], xbla, (info.find(e['title']) or {}).get('genres'))[:3],
+                         'rating': market.rating(e['title'], xbla)[0], 'ratings': market.rating(e['title'], xbla)[1],
                          'year': inf.get('year'), 'mc': inf.get('mc'),
                          'local': g and g['slug'], 'built': bool(g and g.get('built')),
                          'art': bool(g and 'portrait' in (g.get('art') or []))})
@@ -1857,6 +1862,12 @@ def _card(title, slug=None, xbla=None):
         raise HTTPException(400, 'no game given')
     c = market.card(title, tid=tid, xbla=None if xbla is None else bool(xbla))
     c['slug'] = slug
+    c['achievements'] = None
+    if slug and games.find(slug):
+        try:
+            c['achievements'] = achievements.summary(games.find(slug), slug)
+        except Exception:  # noqa: BLE001 - no achievements list: the page goes without
+            pass
     return c
 
 
