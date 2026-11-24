@@ -8,10 +8,19 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.35.0'
+VERSION = '1.36.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.36.0', '2026-11-24', [
+        "Battery saver (a game's Settings, Upscaler): on the battery, the upscaler off and the "
+        "console's anti-aliasing (MSAA) in its place, back on the charger the upscaler again. On the "
+        "Steam Deck it is on by default: Overlord II's APU at 4.7 W against 6.2 with FSR 4 (games "
+        "built from today, ReXNative 0b75f6b).",
+        "Games at 60 fps with FPS Boost on the Deck: where FSR 3.1 leaves the GPU no room either, the "
+        "upscaler goes off for the run and the console's MSAA takes its place (Iron Brigade at 60: "
+        "48.7 fps with FSR 3.1, 58.6 with its MSAA).",
+    ]),
     ('1.35.0', '2026-11-24', [
         "Automatic mode follows the PC while the Manager is open on the Deck, not only when it opens: "
         "the PC gone (asleep, off) with the page on it, the page comes to the Deck; the PC back with "
