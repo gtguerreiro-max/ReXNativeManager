@@ -2762,7 +2762,7 @@ def index():
     # a cópia velha da cache.
     static = os.path.join(HERE, 'static')
     html = open(os.path.join(static, 'index.html'), encoding='utf-8').read()
-    for name in ('app.js', 'style.css'):
+    for name in ('app.js', 'rexlog.js', 'style.css'):
         v = int(os.path.getmtime(os.path.join(static, name)))
         html = html.replace('/static/%s"' % name, '/static/%s?v=%d"' % (name, v))
     return HTMLResponse(html, headers={'Cache-Control': 'no-cache'})

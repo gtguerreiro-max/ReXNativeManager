@@ -131,8 +131,13 @@ setInterval(overview, 3000);
 // aparece a amarelo, e o diálogo diz o que muda e tem Atualizar / Reiniciar (quando nenhuma tarefa
 // estiver a correr).
 let ver = null;
+let pageVer = null;  // the version whose code this page runs (the first answer after it loaded)
 async function versionCheck(fetch) {
   try { ver = await api('/api/version' + (fetch ? '?fetch=true' : '')); } catch (e) { return; }
+  if (!pageVer) pageVer = ver.running;
+  // The app restarted into another version: this page still runs the old one's code (new options
+  // never showed until a reload by hand). It reloads, back where it was.
+  if (ver.running !== pageVer) return reloadForUpdate();
   const el = $('#ver');
   const next = ver.restart_needed ? ver.disk : ver.update_available ? ver.remote : null;
   el.textContent = 'v' + ver.running + (ver.restart.pending ? ' · restarting when the running jobs finish' : next ? ' · v' + next + ' available' : '');
@@ -143,6 +148,30 @@ async function versionCheck(fetch) {
     try { localStorage.setItem('gestor-seen-version', ver.running); } catch (e) { /* */ }
     if (seen) toast(`Updated to v${ver.running}: click the version at the top to see what changed`);
   }
+}
+// Not while something is being typed, a dialog is open or a text was changed and not saved: then
+// as soon as that is done (checked every 5 s).
+function typingNow() {
+  const a = document.activeElement;
+  if (a && (a.tagName === 'TEXTAREA' || a.isContentEditable ||
+            (a.tagName === 'INPUT' && !['checkbox', 'radio', 'button', 'submit'].includes(a.type)))) return true;
+  if ([...document.querySelectorAll('dialog')].some(d => d.open)) return true;
+  return [...document.querySelectorAll('textarea')].some(t => t.value !== t.defaultValue);
+}
+let reloadWait = null;
+function reloadForUpdate() {
+  if (typingNow()) {
+    if (!reloadWait) {
+      toast(`Updated to v${ver.running}: the page reloads as soon as you finish here`);
+      reloadWait = setInterval(() => { if (!typingNow()) reloadForUpdate(); }, 5000);
+    }
+    return;
+  }
+  try {
+    sessionStorage.setItem('gestor-restore', JSON.stringify(
+      { tab, slug: cur && cur.slug, sub: curSub, job: jobView, back: jobBack }));
+  } catch (e) { /* */ }
+  location.reload();
 }
 function changesHtml(changes, from) {
   return (changes || []).map(([v, date, items]) => `<div style="margin:0 0 12px"><b>v${esc(v)}</b> <span class="small muted">${esc(date)}</span>
@@ -1954,3 +1983,13 @@ api('/api/deck').then(d => { deckData = d; }).catch(() => {});
 // Quantas mudanças novas no ReXNative desde a última visita ao Changelog (no separador).
 setTimeout(() => { if (tab !== 'log') logPeek(); }, 4000);
 setInterval(() => { if (tab !== 'log') logPeek(); }, 600000);
+// Reloaded for an update (reloadForUpdate): the tab, game or job that was open.
+(function restoreAfterUpdate() {
+  let r = null;
+  try { r = JSON.parse(sessionStorage.getItem('gestor-restore') || 'null'); sessionStorage.removeItem('gestor-restore'); }
+  catch (e) { return; }
+  if (!r) return;
+  if (r.tab && r.tab !== tab) showTab(r.tab);
+  if (r.job) openJob(r.job, r.back);
+  else if (r.slug) openGame(r.slug, r.sub);
+})();

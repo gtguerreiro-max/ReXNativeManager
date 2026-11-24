@@ -392,6 +392,15 @@ async function refreshHome(readDeck, manual) {
     if (!h.deck) h.deck = {};
     const prev = S.home;
     S.home = h;
+    // The app (the PC's, or this Deck's in Sem PC mode) restarted into another version: this page
+    // still runs the old one's code. It reloads on the same tab, when no window is open over it.
+    if (h.version) {
+      if (!S.pageVer) S.pageVer = h.version;
+      else if (h.version !== S.pageVer && !S.layers.length) {
+        location.replace(location.pathname + '?tab=' + encodeURIComponent(S.tab || ''));
+        return;
+      }
+    }
     const mode = h.mode === 'local' ? 'local' : 'pc';
     if (mode !== S.mode) { S.mode = mode; applyMode(); }
     notifyOrders(prev, h);

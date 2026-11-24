@@ -8,10 +8,17 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.30.1'
+VERSION = '1.30.2'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.30.2', '2026-11-24', [
+        "The PC page and the Deck page reload themselves when the app updates: they went on "
+        "running the old version's code until reloaded by hand, so new options (FPS Boost) did not "
+        "show. The PC page comes back to the tab, game or job that was open, and waits while you "
+        "type or have a dialog open; the Deck page comes back to its tab once no window is open. "
+        "(A page opened before this version needs one reload by hand.)",
+    ]),
     ('1.30.1', '2026-11-24', [
         "Deck mode: FPS Boost on the On the PC tab too (the game's sheet), with Rebuild (and send "
         "when the game is on the Deck).",
