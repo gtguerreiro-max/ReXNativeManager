@@ -397,7 +397,8 @@ async function refreshHome(readDeck, manual) {
     if (h.version) {
       if (!S.pageVer) S.pageVer = h.version;
       else if (h.version !== S.pageVer && !S.layers.length) {
-        location.replace(location.pathname + '?tab=' + encodeURIComponent(S.tab || ''));
+        history.replaceState(null, '', location.pathname + '#tab=' + encodeURIComponent(S.tab || ''));
+        location.reload();
         return;
       }
     }

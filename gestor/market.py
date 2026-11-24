@@ -45,7 +45,7 @@ SAME = {'role-playing': 'role playing', 'rpg': 'role playing', 'role playing gam
 CAPS = [('offlinePlayersMax', 'Players', '{}'), ('offlineCoopPlayersMax', 'Co-op (same console)', 'up to {}'),
         ('offlineSystemLinkMax', 'System link', 'up to {}'), ('onlineMultiplayerMax', 'Online players', 'up to {}'),
         ('onlineCoopPlayersMax', 'Online co-op', 'up to {}')]
-FEATURES = [('offlineMaxHDTVModeId', {1: '480p', 2: '720p', 3: '1080i', 4: '1080p'}, 'HDTV'),
+FEATURES = [('offlineMaxHDTVModeId', None, 'HDTV'),  # its mode ids are undocumented: no resolution
             ('offlineDolbyDigital', None, 'Dolby Digital'), ('onlineContentDownload', None, 'Downloadable content'),
             ('onlineLeaderboards', None, 'Online leaderboards'), ('onlineVoice', None, 'Voice chat'),
             ('onlineTournaments', None, 'Tournaments'), ('offlineCustomSoundtrack', None, 'Custom soundtracks')]

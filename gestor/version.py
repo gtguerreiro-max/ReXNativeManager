@@ -8,10 +8,15 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.31.0'
+VERSION = '1.31.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.31.1', '2026-11-24', [
+        "The Deck page comes back to its tab through its own address (#tab=) after an update; the "
+        "store page shows HDTV without a resolution (the Marketplace's mode ids are not documented, "
+        "and Dark Souls II read as 480p).",
+    ]),
     ('1.31.0', '2026-11-24', [
         "Store pages: a game opens like a page of the Xbox store, on the PC and on the Deck (and in "
         "Sem PC mode): its background, box, genres, the players' rating and Metacritic, the "
