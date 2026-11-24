@@ -1534,6 +1534,8 @@ function openCatGame(key) {
 function fillStore(layer, g, c) {
   if (!S.layers.includes(layer)) return;
   const el = layer.el, im = c.images || {};
+  const h3 = $('.sthead h3', el);
+  if (h3 && c.title && c.title.toLowerCase() === g.title.toLowerCase() && c.title !== g.title) h3.textContent = c.title;
   if (c.tid && im.background) $('#sthero', el).style.setProperty('--hero', `url('${mktImg(c.tid, im.background)}')`);
   const by = [(c.publishers || [])[0], (c.developers || [])[0] !== (c.publishers || [])[0] ? (c.developers || [])[0] : null, c.year || g.year].filter(Boolean);
   $('#stby', el).textContent = by.join(' · ');

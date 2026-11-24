@@ -393,7 +393,7 @@ def card(title, tid=None, xbla=None):
     imgs = (m or {}).get('images', {})
     pick = lambda *names: next((n for n in names if n in imgs), None)  # noqa: E731
     st = (m or {}).get('title')
-    if st and st.isupper():  # "FABLE II": the Wikidata name, or the catalogue's
+    if st and st.isupper() and len(st.replace(' ', '')) > 4:  # "FABLE II", not "SSX": Wikidata's, or the catalogue's
         st = None
     out = {'title': w.get('name') or st or title, 'tid': tid,
            'description': desc or None, 'description_from': src if desc else None,
@@ -403,7 +403,8 @@ def card(title, tid=None, xbla=None):
                int(m['released'][:4]) if m and m.get('released') else None),
            'genres': genres[:8], 'mc': w.get('mc'), 'rating': (m or {}).get('rating'),
            'ratings': (m or {}).get('ratings') or 0, 'modes': (m or {}).get('modes') or [],
-           'features': (m or {}).get('features') or [], 'wiki': w.get('wiki'),
+           # HDTV without the resolution details cached before 1.31.1 carry (its mode ids are undocumented)
+           'features': [re.sub(r'^HDTV .*$', 'HDTV', f) for f in (m or {}).get('features') or []], 'wiki': w.get('wiki'),
            'images': {'background': pick('background.jpg'), 'boxart': pick('boxartlg.jpg', 'boxartsm.jpg'),
                       'banner': pick('banner.png', 'banner.jpg')},
            'screens': (m or {}).get('screens') or [], 'store': bool(m),
