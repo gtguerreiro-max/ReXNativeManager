@@ -15,7 +15,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from . import (achievements, agents, pcdelete, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
+from . import (achievements, agents, pcdelete, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, decksettings, freshness,
                games, github, gpufloor, info, jobs, lan, linuxbuild, market, orders, owngames, pipeline, rexlog, rexrepo, saves,
                scenes, sdk, state, tunings, versions, xna)
 
@@ -805,7 +805,16 @@ def save_settings(slug: str, body: dict = Body(...)):
     if err:
         raise HTTPException(400, 'invalid TOML: %s' % err)
     games.write_text(path, text)
-    return {'path': path, 'text': games.read_text(path)}
+    out = {'path': path, 'text': games.read_text(path)}
+    # The Deck's settings chosen here go to the game on the Deck as well (decksettings.push: only
+    # those keys, at once in a running game from ReXNative 7d098f8), not only to deck.toml for its
+    # next install, which never reached a game already there.
+    if which == 'deck' and 'values' in body:
+        try:
+            out['deck'] = decksettings.push(slug, body['values'], _deck_base(w))
+        except ValueError as e:
+            out['deck'] = {'deck': 'failed', 'error': str(e)}
+    return out
 
 
 # -- FPS Boost (rexnative fps-boost): o patch do Xenia canary que sobe o frame rate do jogo --------
@@ -2249,28 +2258,38 @@ def _setting_value(key, v):
     raise HTTPException(400, 'not a value for %s: %r' % (key, s[:40]))
 
 
-@app.get('/api/remote/settings/{slug}')
-def remote_settings(slug: str):
-    """A game's settings for the Deck: deck.toml's (values), what the Deck has under them (base: the
-    PC's settings with the kit's for the Deck, as `rexnative deck` makes them) and its language."""
-    w = _work(slug)
-    files = games.settings_files(w)
-    base = {}
+def _deck_base(w):
+    """What the Deck has under a game's deck.toml: the PC's settings with the kit's for the Deck, as
+    `rexnative deck` makes them ({section.key: value}); a row's "Default" on the Deck."""
     try:
         dk = games.rexnative('deck')
-        text = games.read_text(files.get('pc') or '')
+        text = games.read_text(games.settings_files(w).get('pc') or '')
         for sec, key, value in dk.DECK_SETTINGS:
             text = dk.toml_set(text, sec, key, value)
-        base = _flat_toml(text)
+        return _flat_toml(text)
     except Exception:  # noqa: BLE001
-        pass
-    return {'values': _flat_toml(games.read_text(files['deck'])), 'base': base, 'language': _language_state(w)}
+        return {}
+
+
+@app.get('/api/remote/settings/{slug}')
+def remote_settings(slug: str):
+    """A game's settings for the Deck: what the game uses there (values: its own file on the Deck,
+    the settings menu's changes in it; deck.toml's when the Deck does not answer, source says
+    which), what the Deck has under deck.toml (base) and its language."""
+    w = _work(slug)
+    live = decksettings.values(slug)
+    values = live if live is not None else _flat_toml(games.read_text(games.settings_files(w)['deck']))
+    return {'values': values, 'source': 'deck' if live is not None else 'deck.toml',
+            'base': _deck_base(w), 'language': _language_state(w)}
 
 
 @app.post('/api/remote/settings/{slug}')
 def remote_settings_save(slug: str, body: dict = Body(...)):
-    """The Deck page's Settings: its values in deck.toml, its language in the PC's and the Deck's
-    settings, and the game's settings sent to the Deck once (in place of the ones there)."""
+    """The Deck page's Settings: its values in deck.toml (for the next installs) and in the game's
+    own settings on the Deck (decksettings.push: only those keys, the settings menu's other changes
+    kept; a running game takes them at once, ReXNative 7d098f8 on), its language in the PC's and
+    the Deck's settings. Before, the game was sent again with its settings in place of the ones
+    there."""
     w = _work(slug)
     vals = {k: _setting_value(k, v) for k, v in (body.get('values') or {}).items() if SETTING_KEY.match(k)}
     if vals:
@@ -2282,10 +2301,20 @@ def remote_settings_save(slug: str, body: dict = Body(...)):
         games.write_text(path, text)
     if body.get('language') not in (None, ''):
         _write_language(w, body.get('language'))
-    if not vals and body.get('language') in (None, ''):
+        # The language as the Deck's settings now have it (deck.toml over the PC's): the game's
+        # own file gets those keys, or loses them (English).
+        files = games.settings_files(w)
+        merged = _flat_toml(games.read_text(files.get('pc') or ''))
+        merged.update(_flat_toml(games.read_text(files['deck'])))
+        for k in ('kernel.user_language', 'kernel.user_country'):
+            vals[k] = merged.get(k)
+    if not vals:
         return {'status': 'ok', 'changed': False}
-    j = _from_deck(_submit_deck(w, action='resend', steam=False, force_settings=True, wait=True))
-    return _job(j)
+    try:
+        res = decksettings.push(slug, vals, _deck_base(w))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return {'status': 'ok', 'changed': True, **res}
 
 
 # -- "On the PC" no Modo Deck: os jogos preparados neste PC -------------------------------------------

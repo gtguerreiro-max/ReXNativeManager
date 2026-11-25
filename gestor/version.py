@@ -8,10 +8,23 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.39.0'
+VERSION = '1.40.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.40.0', '2026-11-25', [
+        "A game's Settings for the Deck show what the game uses there, what was changed in its menu "
+        "on the Deck too (they showed deck.toml, which the game no longer read once installed), and "
+        "a change goes straight to the game on the Deck: only those settings, the rest kept, also "
+        "while it runs. Before, the Deck page sent the whole game again and replaced its settings "
+        "(the menu's changes lost), and the game page's Deck settings never reached a game already "
+        "on the Deck. deck.toml still keeps them for the next installs.",
+        "A running game takes a setting changed in the app at once: games built from ReXNative "
+        "7d098f8 on read their settings file again when it changes, every setting but Resolution and "
+        "Occlusion queries (Texture filtering is live now too). Older builds take them at their next "
+        "start.",
+        "Sem PC mode: Settings and Language save while the game runs too (Deck service 0.14.0).",
+    ]),
     ('1.39.0', '2026-11-25', [
         "A game's Settings have the in-game menu's two new rows: Menu size (Normal, Large, Larger: "
         "the menu's text) and FPS counter (off, top left, top right: the frames a second and a "

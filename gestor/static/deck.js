@@ -1355,8 +1355,11 @@ async function saveSettings(slug) {
   }
   if (!Object.keys(values).length && language === null) { closeLayer(); toast('Nothing changed'); return; }
   try {
-    await api('/api/remote/settings/' + encodeURIComponent(slug), { body: { values, language }, timeout: 40000 });
-    toast(isLocal() ? 'Saved: the game uses them the next time it starts' : 'Settings on their way to the Deck');
+    const r = await api('/api/remote/settings/' + encodeURIComponent(slug), { body: { values, language }, timeout: 40000 });
+    // In the game's own settings on the Deck: a running game takes them at once (built from
+    // 2026-11-25 on; an older one, and the language, at its next start).
+    toast(r && r.deck && r.deck !== 'ok' ? 'Saved for the next install: the Deck did not answer'
+      : 'Saved: the game takes them now, or at its next start');
     if (language !== null && S.langs) delete S.langs[slug];
     closeAll();
   } catch (e) { toast(e.message, true); }

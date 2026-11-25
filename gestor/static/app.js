@@ -922,6 +922,9 @@ async function deckResend(steam, force) {
 // The Deck's settings under deck.toml: the PC's file with the kit's Deck settings on it
 // (/api/remote/settings: base), what "Default" means in the Deck's form.
 let deckBase = {};
+// The settings the game has on the Deck now (its own file there: what its menu changed too), null
+// when the Deck did not answer (the form then shows deck.toml's).
+let deckLive = null;
 function parseToml(text) {
   const out = {};
   let sec = '';
@@ -936,7 +939,7 @@ function parseToml(text) {
 }
 function gameSettings(g) {
   const parts = [['pc', 'On the PC — run/' + (g.exe || '?') + '.toml', 'The game\'s settings on this PC, as its settings HUD (F1) has them; the HUD writes here too. Default: the renderer\'s own.'],
-                 ['deck', 'On the Steam Deck — deck.toml', 'On top of the PC\'s settings and the kit\'s for the Deck (its 1280x800 screen, FSR at native resolution, frame latency 1). Default: those.']];
+                 ['deck', 'On the Steam Deck', 'What the game uses on the Deck, its settings menu\'s changes too: a change applied here goes to it at once, also while it runs (games built from 2026-11-25 on; older ones at their next start), and to deck.toml for its next installs. Default: the PC\'s settings with the kit\'s for the Deck (its 1280x800 screen, FSR at native resolution).']];
   const lang = `<h3>Language</h3><p class="muted small">The languages this game is made in, for this PC and the Deck together. Português (Brasil) is Brazil's.</p>
     <div class="row" id="glang2">${langSelectHtml(g.slug) || '<span class="muted small">English only, or the game has no SPA yet.</span>'}</div>`;
   return lang + parts.filter(([k]) => g.settings[k]).map(([k, title, hint]) => `
@@ -950,14 +953,14 @@ function gameSettings(g) {
       <div class="row" style="margin-top:6px"><button class="b" onclick="saveText('${k}')">Save the file</button></div></details>
     ${k === 'deck' ? `<div class="row" style="margin-top:10px">
       <button class="b" onclick="deckResend(false, $('#forcedeck').checked)" ${g.deck ? '' : 'disabled'}>Resend to the Deck</button>
-      <label class="small"><input type="checkbox" id="forcedeck"> replace the settings the game has on the Deck (changes made in the Deck's HUD are lost)</label></div>
-      <p class="muted small">Without this option, the Deck only gets the new ones if nobody changed the settings in its HUD since the last install.</p>` : ''}`).join('');
+      <label class="small"><input type="checkbox" id="forcedeck"> and replace all of its settings with these and the PC's (what was changed in its menu on the Deck is lost)</label></div>
+      <p class="muted small">The options above go to the game on the Deck as you apply them; the resend is for the game's files.</p>` : ''}`).join('');
 }
 function fillQuickForms() {
   for (const k of ['deck', 'pc']) {
     const box = $('#qf-' + k);
     if (!box) continue;
-    const vals = parseToml(cur.settings[k].text);
+    const vals = k === 'deck' && deckLive ? deckLive : parseToml(cur.settings[k].text);
     const base = k === 'deck' ? deckBase : {};
     box.querySelectorAll('select').forEach(sel => {
       const s = GAME_SETTINGS.find(x => x.id === sel.dataset.id);
@@ -978,7 +981,9 @@ function fillQuickForms() {
 async function loadDeckBase() {
   if (!cur || !cur.settings || !cur.settings.deck) return;
   try {
-    deckBase = (await api(`/api/remote/settings/${encodeURIComponent(cur.slug)}`)).base || {};
+    const r = await api(`/api/remote/settings/${encodeURIComponent(cur.slug)}`);
+    deckBase = r.base || {};
+    deckLive = r.source === 'deck' ? (r.values || {}) : null;
     fillQuickForms();
   } catch (e) { /* the defaults stay the renderer's */ }
 }
@@ -995,8 +1000,13 @@ async function applyQuick(k) {
   try {
     const r = await api(`/api/games/${encodeURIComponent(cur.slug)}/settings`, { method: 'PUT', body: { which: k, values } });
     cur.settings[k].text = r.text; cur.settings[k].exists = true;
-    toast('Saved to ' + r.path);
+    const d = (r.deck || {}).deck;
+    toast(k !== 'deck' ? 'Saved to ' + r.path
+      : d === 'ok' ? 'On the Deck at once (a running game takes them now), and in deck.toml for its next installs'
+      : d === 'not installed' ? 'Saved in deck.toml: the game is not on the Deck'
+      : 'Saved in deck.toml: the Deck did not answer, the game gets them at its next install', !!d && d !== 'ok' && d !== 'not installed');
     renderGame();
+    if (k === 'deck') loadDeckBase();
   } catch (e) { fail(e); }
 }
 async function saveText(k) {
