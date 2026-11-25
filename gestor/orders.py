@@ -92,7 +92,17 @@ def order_job(job, hooks, entry):
     title = entry['title']
     g = local_work(entry)
     work = g['work'] if g else None
-    built = bool(g and games.info(work).get('built'))
+    info = games.info(work) if g else {}
+    built = bool(info.get('built'))
+    # A build whose last boot test on the PC failed is not sent: "already built" took only the
+    # executable's presence, and Forza Motorsport 2, which crashed in its test (Claude's 3 fixes
+    # did not get it going), went to the Deck as ready, where it stayed on a loading screen and
+    # never read the pad (2026-11-25).
+    if built and (info.get('boot') or {}).get('ok') is False:
+        raise RuntimeError(
+            "%s does not start yet: its last boot test on the PC failed (%s), so it was not sent to "
+            "the Deck. Report a problem on its page to have Claude try again." % (
+                title, 'a crash' if (info.get('boot') or {}).get('crash') else 'no frames'))
     if not built:
         source = (g or {}).get('source') if g else None
         if (not source or not os.path.exists(source)) and entry.get('path'):

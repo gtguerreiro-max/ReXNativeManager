@@ -8,10 +8,16 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.42.0'
+VERSION = '1.42.1'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.42.1', '2026-11-25', [
+        "Ordering a game from the Deck no longer sends a build whose last boot test on the PC failed: "
+        "\"already built\" only looked for the executable, and Forza Motorsport 2, which crashed in its "
+        "test, went to the Deck as ready (there it stayed on a loading screen and never read the pad). "
+        "The order now says so, and Report a problem on the game's page has Claude try again.",
+    ]),
     ('1.42.0', '2026-11-25', [
         "New games reach the Deck's Steam library when the Manager closes again: Steam is closed "
         "through its own interface when it ignores steam -shutdown (a Steam up for a day on the Deck "
