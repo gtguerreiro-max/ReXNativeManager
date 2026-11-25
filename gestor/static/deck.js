@@ -933,6 +933,7 @@ function openDeckGame(slug) {
           ${mine ? `<button class="btn f" onclick="openRestore('${esc(g.slug)}')">Restore saves</button>` : ''}
           ${isLocal() && !g.job && (g.where === 'sd' || ((S.home || {}).deck || {}).sd) ? `<button class="btn f" onclick="openMove('${esc(g.slug)}')">${g.where === 'sd' ? 'Move to internal storage' : 'Move to the microSD card'}</button>` : ''}
           ${linuxButton(g)}
+          ${gpuFloorButton(g)}
           <button class="btn d f" onclick="confirmDelete('${esc(g.slug)}')">Delete from Deck</button>
         </div>
         ${g.on_pc ? '' : pcBuilt ? '<div class="note">The PC built this game. Play it, change its settings, restore its saves and see its achievements here; to update it, rebuild it or have Claude look at a problem on this Deck, build it here first (Build on this Deck).</div>'
@@ -1142,6 +1143,22 @@ function renderGameCard(slug, d) {
       <div class="chg">${esc(r.text || '')}</div>${r.summary ? `<div class="chg dim" style="white-space:pre-wrap">${esc(r.summary.replace(/\s*(REXNATIVE|COMMITS|SUSPECTS|SUSPEITOS):.*$/gms, '').trim())}</div>` : ''}</div>`).join('')}</div>`);
   }
   el.innerHTML = h.join('');
+}
+// O relógio da GPU enquanto o jogo joga: o play.sh mantém-na a 1000 MHz ou mais (os frames não
+// esperam por uma GPU a 200 MHz), salvo quando o jogador quer o automático (REXNATIVE_GPU_FLOOR=0).
+function gpuFloorButton(g) {
+  if (g.job || g.complete === false) return '';
+  const on = g.gpu_floor !== false;
+  return `<button class="btn f" onclick="gpuFloorDo('${esc(g.slug)}', ${on ? 'false' : 'true'})">${on ? 'GPU: steady (1000 MHz or more) · use the automatic clock' : 'GPU: automatic clock · keep it steady'}</button>`;
+}
+async function gpuFloorDo(slug, on) {
+  try {
+    const j = await api(`/api/remote/gpu-floor/${encodeURIComponent(slug)}`, { body: { on } });
+    if (j && j.id) S.seen[j.id] = j.status;
+    toast(on ? 'The GPU stays at 1000 MHz or more while this game plays, from its next start' : "SteamOS's automatic GPU clock for this game, from its next start");
+    closeAll();
+    setTimeout(() => { refreshHome(); loadPc(); }, j && j.id ? 2500 : 300);
+  } catch (e) { toast(e.message, true); }
 }
 // A build para Linux (experimental) a partir do Deck: compilar no PC, enviar, ou trocar o que arranca.
 function linuxButton(g) {

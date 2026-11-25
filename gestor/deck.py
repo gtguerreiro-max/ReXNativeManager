@@ -123,6 +123,9 @@ for where, root in roots:
                       'linux': os.path.isfile(os.path.join(d, 'linux', 'run-linux.sh')),
                       'runner': 'linux' if 'REXNATIVE_LINUX_BUILD=' in (open(os.path.join(d, 'deck.env')).read()
                                                                         if os.path.isfile(os.path.join(d, 'deck.env')) else '') else 'windows',
+                      # O piso da GPU enquanto joga (o play.sh põe-no, salvo REXNATIVE_GPU_FLOOR=0 no deck.env).
+                      'gpu_floor': 'REXNATIVE_GPU_FLOOR=0' not in (open(os.path.join(d, 'deck.env')).read()
+                                                                  if os.path.isfile(os.path.join(d, 'deck.env')) else ''),
                       'last_played': os.path.getmtime(logs[-1]) if logs else None})
 shortcuts = []
 if kit:
@@ -327,7 +330,8 @@ def status(refresh=True, only=None):
 def index():
     """{slug: {where, path, size, ...}} dos jogos do Deck (última leitura)."""
     last = state.get('deck', 'last') or {}
-    return {g['slug']: {k: g.get(k) for k in ('where', 'path', 'size', 'shortcut', 'saves', 'linux', 'runner')}
+    return {g['slug']: {k: g.get(k) for k in ('where', 'path', 'size', 'shortcut', 'saves', 'linux', 'runner',
+                                               'gpu_floor')}
             for g in last.get('games', [])}
 
 

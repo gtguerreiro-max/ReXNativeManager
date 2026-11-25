@@ -16,7 +16,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTex
 from fastapi.staticfiles import StaticFiles
 
 from . import (achievements, agents, pcdelete, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, freshness,
-               games, github, info, jobs, lan, linuxbuild, market, orders, owngames, pipeline, rexlog, rexrepo, saves,
+               games, github, gpufloor, info, jobs, lan, linuxbuild, market, orders, owngames, pipeline, rexlog, rexrepo, saves,
                scenes, sdk, state, tunings, versions, xna)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1595,6 +1595,7 @@ def _deck_view(d):
             'update': bool(built and g.get('mtime') and built > g['mtime'] + 120),
             'art': 'portrait' in (loc.get('art') or []), 'on_pc': bool(loc), 'mtime': g.get('mtime'),
             'appid': (sc or {}).get('appid'), 'linux': bool(g.get('linux')), 'runner': g.get('runner') or 'windows',
+            'gpu_floor': g.get('gpu_floor') is not False,
             'job': act[0].id if act else None, 'gestor': bool(sc and sc.get('appid') == gid),
             'achievements': achievements.summary(loc['work'], g['slug']) if loc.get('work') else None,
             'snapshots': len(deck.recent_snapshots(g)),
@@ -2360,6 +2361,31 @@ def remote_linux(slug: str, what: str, body: dict = Body(default={})):
         raise HTTPException(404)
     runner = 'linux' if body.get('runner') == 'linux' else 'windows'
     return _job(_submit_linux(slug, what, runner, from_deck=True))
+
+
+# -- o relógio da GPU enquanto um jogo joga no Deck (gpufloor.py) -----------------------------------
+def _submit_gpu_floor(slug, on, from_deck=False):
+    w = _work(slug)
+    title = games.info(w)['title']
+    with _submit_lock:
+        for j in manager.active(game=slug):
+            if j.kind == 'gpu-floor':
+                return j
+        return manager.submit('gpu-floor', 'GPU clock %s while playing: %s' % ('floor' if on else 'automatic', title),
+                              lambda job: gpufloor.gpu_floor_job(job, slug, on), lane='deck', game=slug,
+                              params={'from_deck': True} if from_deck else {})
+
+
+@app.post('/api/games/{slug}/gpu-floor')
+def game_gpu_floor(slug: str, body: dict = Body(default={})):
+    """body.on: a GPU a 1000 MHz ou mais enquanto o jogo joga no Deck (o normal: frames mais
+    certos); false: o relógio automático do SteamOS."""
+    return _job(_submit_gpu_floor(slug, bool(body.get('on'))))
+
+
+@app.post('/api/remote/gpu-floor/{slug}')
+def remote_gpu_floor(slug: str, body: dict = Body(default={})):
+    return _job(_submit_gpu_floor(slug, bool(body.get('on')), from_deck=True))
 
 
 # -- o registo do ReXNative (o separador Changelog) --------------------------------------------------

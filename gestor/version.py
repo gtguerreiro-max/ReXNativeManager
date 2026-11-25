@@ -8,10 +8,21 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.37.1'
+VERSION = '1.38.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.38.0', '2026-11-25', [
+        "Steadier frames on the Steam Deck in every game: while a game plays, the GPU is kept at 1000 MHz "
+        "or more (up to 1600) and SteamOS's automatic clock comes back when it closes (ReXNative's "
+        "play.sh, which the next install gives every game on the Deck). The Deck's APU shares 15 W "
+        "between CPU and GPU, and when a game's threads burst the automatic clock let the GPU fall to "
+        "200-450 MHz in the middle of frames: Forza Horizon had 8-11 frames over 45 ms in 80 s, none "
+        "with the floor, at the same power; Iron Brigade and Overlord II the same or less. A GPU clock "
+        "set in Steam's quick menu stays as set.",
+        "A game's page (PC) and card (Deck) have a GPU clock switch: steady (the default) or SteamOS's "
+        "automatic clock for that game (Deck service 0.13.0 too).",
+    ]),
     ('1.37.1', '2026-11-24', [
         "Frame latency in a game's Settings: Auto (1-3), as the in-game menu now says. The automatic "
         "latency also goes from 2 to 3 where frames keep coming late at 2, and counts late frames, not "

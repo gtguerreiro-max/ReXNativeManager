@@ -639,6 +639,7 @@ function gameSummary(g) {
     ${g.prepare_error ? `<div>Prepare error</div><div style="color:#ff9b94">${esc(g.prepare_error)}</div>` : ''}
   </div>
   ${(g.tunings || []).length ? `<h3>What ReXNative tunes for this game</h3><div class="kv">${g.tunings.map(t => `<div>${esc(t.k)}</div><div>${esc(t.t)}</div>`).join('')}</div>` : ''}
+  ${gpuFloorHtml(g)}
   ${linuxHtml(g)}
   <h3>Contribution to ReXNative</h3>
   ${contribHtml(g)}
@@ -723,6 +724,18 @@ function compareHtml(g) {
       <div><img class="shot" style="max-width:260px" src="${capUrl(g.slug, p.native)}"><div class="small muted">native ${p.native_ok === false ? '<span class="chip bad">wrong</span>' : p.native_ok ? '<span class="chip ok">right</span>' : ''}</div></div>
       <div><img class="shot" style="max-width:260px" src="${capUrl(g.slug, p.classic)}"><div class="small muted">classic (reference)</div></div>
       <div class="small grow" style="min-width:160px">${esc(p.note || '')}<div class="muted">difference ${p.diff}%</div></div></div>`).join('')}`;
+}
+// O relógio da GPU enquanto o jogo joga no Deck (o play.sh mantém-na a 1000 MHz ou mais;
+// REXNATIVE_GPU_FLOOR=0 no deck.env do jogo deixa o relógio automático do SteamOS).
+function gpuFloorHtml(g) {
+  if (!g.deck) return '';
+  const on = g.deck.gpu_floor !== false;
+  return `<h3>GPU clock on the Deck</h3><div class="panel small"><p style="margin-top:0">While a game plays, the Deck's GPU is kept at 1000 MHz or more (up to 1600): the APU shares 15 W between CPU and GPU, and when a game's threads burst at 3.5 GHz SteamOS's automatic clock let the GPU fall to 200-450 MHz in the middle of frames (Forza Horizon: 8-11 frames over 45 ms in 80 s, none with the floor, at the same power). A GPU clock set in Steam's quick menu stays as set. It counts from the game's next start; the automatic clock comes back when the game closes.</p>
+    <p>${on ? '<b>Steady</b> (the default): 1000 MHz or more while this game plays' : "<b>SteamOS's automatic clock</b> for this game"}</p>
+    <button class="b" onclick="gpuFloorAct('${esc(g.slug)}', ${on ? 'false' : 'true'})">${on ? "Use SteamOS's automatic clock for this game" : 'Keep the GPU steady while it plays'}</button></div>`;
+}
+async function gpuFloorAct(slug, on) {
+  try { const j = await api(`/api/games/${encodeURIComponent(slug)}/gpu-floor`, { body: { on } }); openJob(j.id); } catch (e) { fail(e); }
 }
 // A build para Linux (experimental): compilar no WSL, enviar para o Deck, escolher o que arranca.
 function linuxHtml(g) {
