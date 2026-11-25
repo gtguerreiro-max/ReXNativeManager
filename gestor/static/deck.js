@@ -1145,7 +1145,8 @@ function renderGameCard(slug, d) {
   el.innerHTML = h.join('');
 }
 // O relógio da GPU enquanto o jogo joga: o play.sh mantém-na a 1000 MHz ou mais (os frames não
-// esperam por uma GPU a 200 MHz), salvo quando o jogador quer o automático (REXNATIVE_GPU_FLOOR=0).
+// esperam por uma GPU a 200 MHz), salvo quando o jogador quer o automático (a definição do jogo
+// rexnative.gpu_floor = 0, a mesma do menu do jogo, que o vigia do play.sh segue logo).
 function gpuFloorButton(g) {
   if (g.job || g.complete === false) return '';
   const on = g.gpu_floor !== false;
@@ -1155,7 +1156,7 @@ async function gpuFloorDo(slug, on) {
   try {
     const j = await api(`/api/remote/gpu-floor/${encodeURIComponent(slug)}`, { body: { on } });
     if (j && j.id) S.seen[j.id] = j.status;
-    toast(on ? 'The GPU stays at 1000 MHz or more while this game plays, from its next start' : "SteamOS's automatic GPU clock for this game, from its next start");
+    toast(on ? 'The GPU stays at 1000 MHz or more while this game plays (at once if it is running)' : "SteamOS's automatic GPU clock for this game (at once if it is running)");
     closeAll();
     setTimeout(() => { refreshHome(); loadPc(); }, j && j.id ? 2500 : 300);
   } catch (e) { toast(e.message, true); }

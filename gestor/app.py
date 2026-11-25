@@ -2396,6 +2396,9 @@ def remote_linux(slug: str, what: str, body: dict = Body(default={})):
 def _submit_gpu_floor(slug, on, from_deck=False):
     w = _work(slug)
     title = games.info(w)['title']
+    # Também no deck.toml (as definições do Deck que a instalação seguinte leva), como as Definições.
+    path = games.settings_files(w)['deck']
+    games.write_text(path, games.apply_values(games.read_text(path), {gpufloor.KEY: gpufloor.value(on)}))
     with _submit_lock:
         for j in manager.active(game=slug):
             if j.kind == 'gpu-floor':

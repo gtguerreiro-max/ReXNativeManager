@@ -18,8 +18,39 @@ from . import config, games, jobs, state
 q = shlex.quote
 
 LIST_SCRIPT = r'''
-import glob, json, os, subprocess, sys
+import glob, json, os, re, subprocess, sys
 home = os.path.expanduser('~')
+def gpu_floor(d, exes):
+    # O piso da GPU que o play.sh mantém enquanto o jogo joga (ReXNative e5646c0): a definição do
+    # jogo [rexnative] gpu_floor (o menu do jogo, o interruptor da app), senão REXNATIVE_GPU_FLOOR
+    # num deck.env (o da pasta dos jogos, depois o do jogo), senão 1000. True: há piso.
+    if exes:
+        newest = max(exes, key=lambda e: os.path.getmtime(os.path.join(d, e)))
+        sec = None
+        try:
+            with open(os.path.join(d, newest[:-4] + '.toml'), encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    s = line.split('#')[0].strip()
+                    m = re.match(r'^\[\s*"?([A-Za-z0-9_.-]+)"?\s*\]$', s)
+                    if m:
+                        sec = m.group(1)
+                        continue
+                    m = re.match(r'^gpu_floor\s*=\s*"?(\d+)', s)
+                    if m and sec == 'rexnative':
+                        return int(m.group(1)) > 0
+        except OSError:
+            pass
+    v = None
+    for env in (os.path.join(os.path.dirname(d), 'deck.env'), os.path.join(d, 'deck.env')):
+        try:
+            with open(env, encoding='utf-8', errors='replace') as f:
+                for line in f:
+                    m = re.match(r'^\s*(?:export\s+)?REXNATIVE_GPU_FLOOR=["\x27]?(\d+)', line)
+                    if m:
+                        v = int(m.group(1))
+        except OSError:
+            pass
+    return v is None or v > 0
 light = 'light' in sys.argv[1:]  # sem medir pastas (apagar, repor: só é preciso saber onde estão)
 # only=a,b: medir só estes jogos (depois de enviar um, os outros não mudaram)
 only = next((a[5:].split(',') for a in sys.argv[1:] if a.startswith('only=')), None)
@@ -123,9 +154,8 @@ for where, root in roots:
                       'linux': os.path.isfile(os.path.join(d, 'linux', 'run-linux.sh')),
                       'runner': 'linux' if 'REXNATIVE_LINUX_BUILD=' in (open(os.path.join(d, 'deck.env')).read()
                                                                         if os.path.isfile(os.path.join(d, 'deck.env')) else '') else 'windows',
-                      # O piso da GPU enquanto joga (o play.sh põe-no, salvo REXNATIVE_GPU_FLOOR=0 no deck.env).
-                      'gpu_floor': 'REXNATIVE_GPU_FLOOR=0' not in (open(os.path.join(d, 'deck.env')).read()
-                                                                  if os.path.isfile(os.path.join(d, 'deck.env')) else ''),
+                      # O piso da GPU enquanto joga (gpu_floor acima).
+                      'gpu_floor': gpu_floor(d, exes),
                       'last_played': os.path.getmtime(logs[-1]) if logs else None})
 shortcuts = []
 if kit:

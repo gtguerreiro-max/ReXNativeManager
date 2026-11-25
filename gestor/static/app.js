@@ -725,12 +725,12 @@ function compareHtml(g) {
       <div><img class="shot" style="max-width:260px" src="${capUrl(g.slug, p.classic)}"><div class="small muted">classic (reference)</div></div>
       <div class="small grow" style="min-width:160px">${esc(p.note || '')}<div class="muted">difference ${p.diff}%</div></div></div>`).join('')}`;
 }
-// O relógio da GPU enquanto o jogo joga no Deck (o play.sh mantém-na a 1000 MHz ou mais;
-// REXNATIVE_GPU_FLOOR=0 no deck.env do jogo deixa o relógio automático do SteamOS).
+// O relógio da GPU enquanto o jogo joga no Deck (o play.sh mantém-na a 1000 MHz ou mais; a
+// definição do jogo rexnative.gpu_floor = 0, a mesma do menu do jogo, deixa o relógio automático).
 function gpuFloorHtml(g) {
   if (!g.deck) return '';
   const on = g.deck.gpu_floor !== false;
-  return `<h3>GPU clock on the Deck</h3><div class="panel small"><p style="margin-top:0">While a game plays, the Deck's GPU is kept at 1000 MHz or more (up to 1600): the APU shares 15 W between CPU and GPU, and when a game's threads burst at 3.5 GHz SteamOS's automatic clock let the GPU fall to 200-450 MHz in the middle of frames (Forza Horizon: 8-11 frames over 45 ms in 80 s, none with the floor, at the same power). A GPU clock set in Steam's quick menu stays as set. It counts from the game's next start; the automatic clock comes back when the game closes.</p>
+  return `<h3>GPU clock on the Deck</h3><div class="panel small"><p style="margin-top:0">While a game plays, the Deck's GPU is kept at 1000 MHz or more (up to 1600): the APU shares 15 W between CPU and GPU, and when a game's threads burst at 3.5 GHz SteamOS's automatic clock let the GPU fall to 200-450 MHz in the middle of frames (Forza Horizon: 8-11 frames over 45 ms in 80 s, none with the floor, at the same power). It is the game's own setting, which its settings menu on the Deck has too (Display, GPU clock), and it changes at once, also while the game plays. A GPU clock set in Steam's quick menu goes first; the automatic clock comes back when the game closes.</p>
     <p>${on ? '<b>Steady</b> (the default): 1000 MHz or more while this game plays' : "<b>SteamOS's automatic clock</b> for this game"}</p>
     <button class="b" onclick="gpuFloorAct('${esc(g.slug)}', ${on ? 'false' : 'true'})">${on ? "Use SteamOS's automatic clock for this game" : 'Keep the GPU steady while it plays'}</button></div>`;
 }

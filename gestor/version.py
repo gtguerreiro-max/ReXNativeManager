@@ -8,10 +8,20 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.40.0'
+VERSION = '1.41.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.41.0', '2026-11-25', [
+        "The Deck's GPU clock for a game (steady at 1000 MHz or more, or SteamOS's automatic clock) "
+        "is the game's own setting now, the same as the GPU clock in its settings menu on the Deck "
+        "(Display page, ReXNative e5646c0): the game card's switch, Settings (a GPU clock row for the "
+        "Deck) and the menu all change it, and what one sets the others show. It takes effect at "
+        "once, also while the game plays: play.sh's watcher reads it each second (every game on the "
+        "Deck has that play.sh once a game is installed from ReXNative e5646c0 on). Before, the "
+        "switch wrote a line in the game's deck.env that counted from its next start and the menu "
+        "did not know; the switch takes that line out.",
+    ]),
     ('1.40.0', '2026-11-25', [
         "A game's Settings for the Deck show what the game uses there, what was changed in its menu "
         "on the Deck too (they showed deck.toml, which the game no longer read once installed), and "
