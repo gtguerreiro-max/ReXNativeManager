@@ -8,10 +8,21 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.41.0'
+VERSION = '1.42.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.42.0', '2026-11-25', [
+        "New games reach the Deck's Steam library when the Manager closes again: Steam is closed "
+        "through its own interface when it ignores steam -shutdown (a Steam up for a day on the Deck "
+        "stopped taking command-line requests, so it never closed, the library update gave up after "
+        "60 s and tried again every 5 minutes, and the games stayed out). Steam reopens by itself "
+        "afterwards, as before.",
+        "Also on the Deck: test leftovers had filled /tmp, which is in memory there with a quota, and "
+        "then flatpak (the Manager's Firefox) could not start. The tests now remove their scratch "
+        "homes, and ReXNative's code cache (bd538dc) is one file per game, in "
+        "~/.cache on the Deck.",
+    ]),
     ('1.41.0', '2026-11-25', [
         "The Deck's GPU clock for a game (steady at 1000 MHz or more, or SteamOS's automatic clock) "
         "is the game's own setting now, the same as the GPU clock in its settings menu on the Deck "

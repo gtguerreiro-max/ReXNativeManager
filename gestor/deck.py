@@ -212,7 +212,41 @@ if pgrep -x steam >/dev/null; then
   if pgrep -f "[S]teamLaunch AppId=" >/dev/null; then echo "GAME_OPEN: a game started on the Deck"; exit 3; fi
   echo "closing Steam to change the shortcuts"
   steam -shutdown >/dev/null 2>&1
-  for i in $(seq 1 120); do pgrep -x steam >/dev/null || break; sleep 0.5; done
+  for i in $(seq 1 20); do pgrep -x steam >/dev/null || break; sleep 0.5; done
+  # A Steam that no longer reads its command pipe (~/.steam/steam.pipe) ignores steam -shutdown
+  # (one up for a day on the Deck ignored it and steam:// links alike, 2026-11-25: the shortcuts
+  # never went in). Asked through its own interface then, the debug port Decky turns on
+  # (SteamClient.User.StartShutdown, as its Exit), and last with TERM.
+  if pgrep -x steam >/dev/null; then
+    echo "steam -shutdown not taken: asking Steam's own interface"
+    python3 - <<'CLOSE_STEAM_PY' >/dev/null 2>&1
+import base64, json, os, socket, urllib.request
+pages = json.load(urllib.request.urlopen("http://127.0.0.1:8080/json", timeout=5))
+url = next(p["webSocketDebuggerUrl"] for p in pages if p.get("title") == "SharedJSContext")
+hp, path = url[len("ws://"):].split("/", 1)
+s = socket.create_connection((hp.split(":")[0], int(hp.split(":")[1])), timeout=10)
+key = base64.b64encode(os.urandom(16)).decode()
+s.sendall(("GET /" + path + " HTTP/1.1\r\nHost: " + hp + "\r\nUpgrade: websocket\r\n"
+           "Connection: Upgrade\r\nSec-WebSocket-Key: " + key + "\r\nSec-WebSocket-Version: 13\r\n\r\n").encode())
+r = b""
+while b"\r\n\r\n" not in r:
+    r += s.recv(4096)
+d = json.dumps({"id": 1, "method": "Runtime.evaluate",
+                "params": {"expression": "SteamClient.User.StartShutdown(false)"}}).encode()
+m = os.urandom(4)
+size = bytes([0x80 | len(d)]) if len(d) < 126 else bytes([0x80 | 126]) + len(d).to_bytes(2, "big")
+s.sendall(bytes([0x81]) + size + m + bytes(b ^ m[i & 3] for i, b in enumerate(d)))
+s.recv(4096)
+CLOSE_STEAM_PY
+    for i in $(seq 1 60); do pgrep -x steam >/dev/null || break; sleep 0.5; done
+  fi
+  if pgrep -x steam >/dev/null; then
+    echo "Steam still open: TERM"
+    sp=$(cat ~/.steam/steam.pid 2>/dev/null)
+    kill -0 "$sp" 2>/dev/null || sp=$(pgrep -o -x steam)
+    kill -TERM "$sp" 2>/dev/null
+    for i in $(seq 1 60); do pgrep -x steam >/dev/null || break; sleep 0.5; done
+  fi
   if pgrep -x steam >/dev/null; then echo "Steam did not close"; exit 1; fi
 fi
 '''
