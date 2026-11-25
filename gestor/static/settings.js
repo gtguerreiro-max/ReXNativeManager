@@ -28,6 +28,12 @@ const GAME_SETTINGS = [
     // go to 3); otherwise the number, whatever auto says.
     read: e => { const n = Number(e['rexnative.frame_latency']); return n <= 2 && String(e['rexnative.frame_latency_auto']) === 'true' ? 0 : Math.min(3, Math.max(1, n)); },
     hint: 'Frames the game may run ahead of the screen: 1 responds soonest, 3 is the steadiest when the GPU is near its limit or the game stutters. Auto: 1, then 2 and 3 while frames miss the screen or come late, each kept for good once it helps.' },
+  { id: 'menu_size', group: 'Display', label: 'Menu size', where: 'both', def: { 'rexnative.hud_scale': 100 },
+    choices: [['Normal', { 'rexnative.hud_scale': 100 }], ['Large', { 'rexnative.hud_scale': 115 }], ['Larger', { 'rexnative.hud_scale': 130 }]],
+    hint: 'The size of the in-game settings menu\'s text (games built from 2026-11-25).' },
+  { id: 'fps_counter', group: 'Display', label: 'FPS counter', where: 'both', def: { 'rexnative.hud_fps': 0 },
+    choices: [['Off', { 'rexnative.hud_fps': 0 }], ['Top left', { 'rexnative.hud_fps': 1 }], ['Top right', { 'rexnative.hud_fps': 2 }]],
+    hint: 'The frames a second and the time of a frame in a corner while the game plays; on the Steam Deck a 16:9 game leaves it in the black band above the picture (games built from 2026-11-25).' },
   { id: 'window_mode', group: 'Display', label: 'Window', where: 'pc', def: { 'ui.fullscreen': false, 'ui.fullscreen_exclusive': false },
     choices: [['Windowed', { 'ui.fullscreen': false }], ['Full screen', { 'ui.fullscreen': true, 'ui.fullscreen_exclusive': false }],
               ['Full screen (exclusive)', { 'ui.fullscreen': true, 'ui.fullscreen_exclusive': true }]],

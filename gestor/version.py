@@ -8,10 +8,22 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.38.0'
+VERSION = '1.39.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.39.0', '2026-11-25', [
+        "A game's Settings have the in-game menu's two new rows: Menu size (Normal, Large, Larger: "
+        "the menu's text) and FPS counter (off, top left, top right: the frames a second and a "
+        "frame's time while the game plays; on the Deck in the black band above a 16:9 picture). "
+        "For games built from ReXNative 29f87cd on.",
+        "The in-game menu itself (after a rebuild): how the game runs and the battery in its title "
+        "bar, the pad's buttons as coloured glyphs (L1/R1 on the Deck), the game dimmed behind it "
+        "and a window that no longer changes size between pages; on the Deck it also knows it is "
+        "there when Steam did not say so (ReXNative c66db12).",
+        "Deck: a game started from the Manager's Decky plugin (its Play) no longer stops at once "
+        "under GE-Proton11-12 (ReXNative c66db12's play.sh, already on every game on the Deck).",
+    ]),
     ('1.38.0', '2026-11-25', [
         "Steadier frames on the Steam Deck in every game: while a game plays, the GPU is kept at 1000 MHz "
         "or more (up to 1600) and SteamOS's automatic clock comes back when it closes (ReXNative's "
