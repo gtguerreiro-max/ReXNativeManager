@@ -115,7 +115,10 @@ From download to the Steam Deck:
    as the source **Your files**, in the PC app and in Deck mode, where **Install on the Deck** goes
    straight to preparing from your file (no download; a game of yours wins over a source's copy of
    the same game). Prepared games' folders and the downloads folder are left out.
-2. **Downloads**: only what you choose, with resume and MD5 verification.
+2. **Downloads**: only what you choose, with resume and MD5 verification. Once a game is prepared
+   and built, its downloaded archive and the copy extracted from it go (nothing reads them after
+   that; **Keep downloaded archives** in the Settings keeps them). Prepare again reuses the
+   extracted game, or downloads the archive again first. Your own files are never removed.
 3. **Prepare, build and test**: `python -m rexnative prepare ... --title-update --dlc --project`
    (title update from XboxUnity, DLC from the DLC sources you set in the Settings: folders with an
    archive per game, or archive.org items; none set, no DLC), then a boot test on the PC with
@@ -392,7 +395,7 @@ Settings > "Linux builds" turns it on (off by default) and takes the WSL distrib
   native vs classic, the Deck settings test, the renderer on the PC and the Deck, the XDK and the
   Metacritic score; sortable by any column, filterable, exportable as CSV.
 - **Storage**: the free space of each drive; each game folder by parts (the extracted game, the
-  archive copy kept in the folder, the build, the run folder; "Measure the game folders" walks them
+  archive copy, removed once the game is built unless the Settings keep it, the build, the run folder; "Measure the game folders" walks them
   in the background); the downloaded archives, with "Delete the archives already prepared".
 - **ReXGlue SDK** (Settings, `gestor/sdk.py`): the installed version, our changes on top of the
   official SDK (the fork), the official commits not in it yet, the latest release and nightly on

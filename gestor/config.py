@@ -33,6 +33,10 @@ DEFAULTS = {
     # Para onde vão os downloads e os jogos novos.
     'download_dir': os.path.join(BASE, 'downloads'),
     'work_dir': os.path.join(BASE, 'work'),
+    # Off: once a game is prepared and built, the archive the app downloaded for it and its extracted
+    # copy (archive/ in the game's folder) are removed (tidy.py); Prepare again reuses the extracted
+    # game, or downloads the archive again. Your own files are never removed.
+    'keep_archives': False,
     # Todas as pastas com jogos já preparados (cada subpasta com prepare.json é um jogo).
     'work_roots': [os.path.join(BASE, 'work')],
     # O estado da app, os registos das tarefas, as capas descarregadas, as cópias de segurança.

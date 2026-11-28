@@ -17,7 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import (achievements, agents, pcdelete, catalog, catcovers, changelog, claude, config, connection, covers, deck, deckapp, decksettings, freshness,
                games, github, gpufloor, info, jobs, lan, linuxbuild, market, orders, owngames, pipeline, rexlog, rexrepo, saves,
-               scenes, sdk, state, tunings, versions, xna)
+               scenes, sdk, state, tidy, tunings, versions, xna)
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 app = FastAPI(title='ReXNative Manager')
@@ -270,8 +270,12 @@ def _download_fn(item, name, then, f, dest):
             said = [l for l in jobs.tail(job.log_path, 6).splitlines() if l.strip() and not l.startswith('-> exit code')]
             raise RuntimeError('the download failed: %s' % (said[-1].strip()[:300] if said else 'exit code %d' % rc))
         job.event('ok', 'Downloaded and verified (MD5)')
-        if then == 'prepare':
-            pj = _submit_pipeline(title, source=dest)
+        if then == 'prepare' or isinstance(then, dict):
+            # A dict: Prepare again of a game whose archive was removed (game_pipeline), in its own
+            # folder, with the steps asked for.
+            again = then if isinstance(then, dict) else {}
+            pj = _submit_pipeline(title, source=dest, work=again.get('work'), steps=again.get('steps'),
+                                  after_deck=again.get('after_deck'))
             job.event('info', 'Preparation queued: job %s' % pj.id, job=pj.id)
         return {'path': dest}
     return fn
@@ -777,15 +781,23 @@ def game_pipeline(slug: str, body: dict = Body(default={})):
     if bad:
         raise HTTPException(400, 'unknown steps: %s' % bad)
     source = None
+    title = games.info(w)['title']
+    after = body.get('deck')
     if 'prepare' in steps:
         prep = games._read_json(os.path.join(w, 'prepare.json'))
         source = prep.get('source')
-        if not source or not os.path.exists(source):
-            raise HTTPException(400, 'the original archive (%s) no longer exists: only a build is possible' % source)
-    title = games.info(w)['title']
-    after = body.get('deck')
-    j = _submit_pipeline(title, source=source, work=None if source else w, steps=steps,
-                         after_deck=after)
+        # Its archive goes once it is prepared (tidy.py): prepare reuses game-data without it, and
+        # when that is not complete either, the archive the app downloaded is downloaded again first.
+        if not source or tidy.prepare_needs_source(w, source):
+            again = tidy.download_of(source)
+            if not again or not catalog.find_file(*again):
+                raise HTTPException(400, 'the original archive (%s) is not on the PC any more and the app '
+                                         'cannot download it again: only a build is possible' % source)
+            try:
+                return _job(_submit_download(*again, then={'work': w, 'steps': steps, 'after_deck': after}))
+            except OSError as e:
+                raise HTTPException(507, str(e))
+    j = _submit_pipeline(title, source=source, work=w, steps=steps, after_deck=after)
     return _job(j)
 
 

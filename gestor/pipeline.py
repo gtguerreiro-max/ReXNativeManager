@@ -18,7 +18,7 @@ import subprocess
 import threading
 import time
 
-from . import catalog, claude, config, fsutil, games, jobs, rexrepo, state, xna
+from . import catalog, claude, config, fsutil, games, jobs, rexrepo, state, tidy, xna
 
 FRAME_LINE = re.compile(r'ReXNative: frames (\d+) \| per frame: draws ([\d.]+).*?frame ([\d.]+) ms')
 CRASH = re.compile(r'crash report, rexglue|==== end of crash report|\bFATAL\b|access violation',
@@ -54,22 +54,36 @@ def free_gb(path):
 def step_prepare(job, ctx, attempt):
     cfg = config.load()
     src = ctx['source']
+    # The game's own work folder: one prepared before, in another of the work_roots, is prepared
+    # again there (it went to a new folder in work_dir).
+    root = os.path.dirname(os.path.abspath(ctx['work']))
+    if tidy.prepare_needs_source(ctx['work'], src):
+        # Its archive was removed once it was prepared (tidy.py) and game-data is not complete:
+        # app.game_pipeline and orders download it again before this step.
+        return False, _fail('prepare', 'The archive %s is not on the PC any more and the game is '
+                            'not extracted: download it again (Prepare again does)' % src, no_fix=True)
     need = os.path.getsize(src) * 2.5 / 1e9 if os.path.exists(src) else 0
-    if not os.path.isdir(os.path.join(ctx['work'], 'game-data')) and free_gb(cfg['work_dir']) < need:
+    if not os.path.isdir(os.path.join(ctx['work'], 'game-data')) and free_gb(root) < need:
         return False, _fail('prepare', 'Not enough free space on %s: %.1f GB free, ~%.0f GB '
-                            'needed' % (cfg['work_dir'], free_gb(cfg['work_dir']), need),
+                            'needed' % (root, free_gb(root), need),
                             no_fix=True)
     log = _step_log(job, 'prepare', attempt)
-    cmd = _rex(cfg) + ['prepare', src, '--work', cfg['work_dir']] + list(cfg['prepare_args'])
+    cmd = _rex(cfg) + ['prepare', src, '--work', root] + list(cfg['prepare_args'])
     rc = job.run(cmd, cwd=cfg['rexnative_dir'], env=config.tool_env(), log_path=log)
     prep = games._read_json(os.path.join(ctx['work'], 'prepare.json'))
     if rc == 0 and prep.get('ok'):
-        return True, {'summary': 'prepared and built%s%s' % (prepare_times(log, ctx['slug']),
-                                                             own_dlc(job, ctx, cfg, log))}
+        return True, {'summary': 'prepared and built%s%s%s' % (prepare_times(log, ctx['slug']),
+                                                               own_dlc(job, ctx, cfg, log),
+                                                               tidy.after_prepare(job, ctx['work'], src))}
     why = prep.get('error') or 'exit code %d' % rc
+    details = 'prepare.json error: %s\n' % prep.get('error') if prep.get('error') else ''
+    if not os.path.exists(src):
+        details += ('The archive (%s) was removed after the game was first prepared (Settings > Keep '
+                    'downloaded archives is off). game-data is complete and prepare reuses it, so the '
+                    'archive is not needed: do not look for it.\n' % src)
     return False, _fail('prepare', 'Preparation failed: %s' % why[:300], command=_cmdline(cmd),
                         cwd=cfg['rexnative_dir'], rc=rc, log_path=log, tail=jobs.tail(log, 220),
-                        details='prepare.json error: %s\n' % prep.get('error') if prep.get('error') else '')
+                        details=details)
 
 
 def own_dlc(job, ctx, cfg, log):
@@ -1399,13 +1413,14 @@ def selftest(job):
 
 # -- o pipeline --------------------------------------------------------------------------------
 def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True, quick=False, dlc=None):
-    """source: um arquivo descarregado (jogo novo: prepare); work: um jogo já preparado (build).
+    """source: um arquivo descarregado (jogo novo: prepare); work: um jogo já preparado (build), ou,
+    com source, a pasta do jogo a preparar outra vez (Prepare again: nessa pasta, não em work_dir).
     steps: os passos a correr (por omissão prepare+boot ou build+boot). fallback: o renderizador
     clássico quando o nativo não passa (não nos testes de suspeitos nem nos relatórios, onde
     esconderia o que a mudança estragou). dlc: os DLC de um jogo teu (pacotes, arquivos ou pastas),
     instalados depois do prepare."""
     cfg = config.load()
-    slug = catalog.slug(source) if source else os.path.basename(os.path.abspath(work))
+    slug = os.path.basename(os.path.abspath(work)) if work else catalog.slug(source)
     # A game with its gameplay scene is compared there (the scene is the same frames every time):
     # no captures at 15/30/45/60 s of intros and menus, and a rebuild only checks that it boots.
     from . import scenes as _scenes
@@ -1413,7 +1428,8 @@ def run(job, source=None, work=None, steps=None, auto_report=True, fallback=True
     tests = ['boot', 'scenes'] + (['compare'] if cfg.get('compare_enabled', True) and not played else []) + (
         ['deckpc'] if cfg.get('deck_test_enabled', True) else [])
     if source:
-        work = os.path.join(cfg['work_dir'], slug)
+        # A game prepared before is prepared again in its own folder (any of the work_roots).
+        work = os.path.abspath(work) if work else os.path.join(cfg['work_dir'], slug)
         steps = steps or ['prepare'] + tests
     else:
         work = os.path.abspath(work)

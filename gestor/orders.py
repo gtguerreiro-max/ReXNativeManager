@@ -8,7 +8,7 @@ O pedido mostra a etapa e o progresso da tarefa que está a seguir; cancelá-lo 
 import os
 import time
 
-from . import catalog, config, games, jobs, owngames
+from . import catalog, config, games, jobs, owngames, tidy
 
 STAGES = ('download', 'build', 'deck')
 STAGE_PT = {'download': 'Downloading', 'build': 'Preparing and building on the PC',
@@ -105,10 +105,15 @@ def order_job(job, hooks, entry):
                 title, 'a crash' if (info.get('boot') or {}).get('crash') else 'no frames'))
     if not built:
         source = (g or {}).get('source') if g else None
-        if (not source or not os.path.exists(source)) and entry.get('path'):
+        # A game prepared before, whose archive went once it was (tidy.py): prepare reuses its
+        # game-data, without downloading the archive again.
+        reuse = bool(work and source and not tidy.prepare_needs_source(work, source))
+        if reuse and not os.path.exists(source):
+            job.event('info', 'Already extracted on the PC: prepared again without its archive')
+        if not reuse and (not source or not os.path.exists(source)) and entry.get('path'):
             source = entry['path']  # um jogo teu: sem download
             job.event('info', 'Your file: %s' % source)
-        if not source or not os.path.exists(source):
+        if not reuse and (not source or not os.path.exists(source)):
             source = download_path(entry['item'], entry['name'])
             have = os.path.getsize(source) if os.path.exists(source) else 0
             if have != entry.get('size'):
@@ -118,7 +123,8 @@ def order_job(job, hooks, entry):
                 sub = active or hooks.submit_download(entry['item'], entry['name'])
                 _follow(job, sub, 'download', hooks)
         active = next(iter(hooks.manager.active(kind='pipeline', game=entry['slug'])), None)
-        sub = active or hooks.submit_pipeline(title, source=source, steps=['prepare', 'boot', 'deckpc'])
+        # In the game's own folder when it has one (any of the work_roots).
+        sub = active or hooks.submit_pipeline(title, source=source, work=work, steps=['prepare', 'boot', 'deckpc'])
         sub = _follow(job, sub, 'build', hooks)
         work = sub.result.get('work') or work
         if not work:

@@ -8,10 +8,31 @@ por reiniciar) e com a do GitHub (origin/main), e mostra o que muda (versions.py
 As versões do lançador do Deck (deckapp.VERSION) e do plugin do Decky (decky/package.json) são à
 parte: a app sabe a que está no Deck e avisa quando há uma mais nova."""
 
-VERSION = '1.42.1'
+VERSION = '1.44.0'
 
 # (versão, data, [o que muda]) — em inglês, a língua da app.
 CHANGES = [
+    ('1.44.0', '2026-11-28', [
+        "Extracting a game shows how far it is: the archive (7-Zip), then the game's disc image or "
+        "package, each from 0 to 100%, with its MB/s on the Jobs page and the Deck's Requests page, and "
+        "on the Decky plugin's bar (ReXNative 8ad8a06 logs it). Before, Forza Motorsport 4 (a 10.5 GB "
+        "RAR) sat at \"Extracting\" for 18 minutes with no number and looked stuck.",
+        "Sem PC mode (Deck service 0.17.0): the same, while the Deck prepares a game.",
+        "Deck's Requests page: a rebuild asked from the Deck names its step again before its phases "
+        "(it showed \": ▶ Extract\").",
+    ]),
+    ('1.43.0', '2026-11-28', [
+        "A game's downloaded archive and its extracted copy (archive in the game's folder) are removed "
+        "once the game is prepared and built: nothing reads them after that, and they took as much space "
+        "as the game again (Forza Motorsport 4: a 10.5 GB RAR and 11 GB extracted). Settings > Keep "
+        "downloaded archives keeps them. Your own files (Add your own game, Your files) are never "
+        "removed, as the Deck's Sem PC mode does.",
+        "Prepare again works without the archive: it reuses the extracted game, and when that is not "
+        "complete either it downloads the archive again first, as an order from the Deck does. An order "
+        "for a game already extracted on the PC no longer downloads its archive again.",
+        "A game prepared again stays in its own folder: one in another of the folders with prepared "
+        "games was prepared again into a new folder in the folder for new games.",
+    ]),
     ('1.42.1', '2026-11-25', [
         "Ordering a game from the Deck no longer sends a build whose last boot test on the PC failed: "
         "\"already built\" only looked for the executable, and Forza Motorsport 2, which crashed in its "

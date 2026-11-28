@@ -1922,7 +1922,7 @@ function stageText(o) {
     if (o.status === 'cancelled') return 'cancelled';
     if (o.status === 'interrupted') return interrupted();
     if (p.total) return `${gb(p.done)} of ${gb(p.total)}${p.rate ? ' · ' + (p.rate / 1e6).toFixed(1) + ' MB/s' : ''}${p.eta != null && p.done < p.total ? ' · ' + eta(p.eta) + ' left' : ''}`;
-    if (p.phase) return [p.step_pt, p.phase].filter(Boolean).join(': ') + (p.pct != null ? ` · ${Math.round(p.pct)}%` : '');
+    if (p.phase) return [p.step_pt, p.phase].filter(Boolean).join(': ') + (p.pct != null ? ` · ${Math.round(p.pct)}%` : '') + (p.rate && p.pct != null ? ' · ' + (p.rate / 1e6).toFixed(1) + ' MB/s' : '');
     return o.last || 'running';
   }
   if (o.kind === 'deck-report') {
@@ -1951,7 +1951,8 @@ function pcSteps(p) {
   const phases = (p.phases || []).map(x => `<span class="ps ${x.now ? 'now' : 'done'}">${x.now ? '▶' : '✓'} ${esc(x.name)}</span>`).join('');
   const cur = p.pstep && !(p.phases || []).length ? `<span class="ps now">▶ ${esc(PSTEP[p.pstep] || p.step_pt || '')}</span>` : '';
   const t = [p.step_elapsed != null ? 'in this step for ' + eta(p.step_elapsed) : '', p.elapsed != null ? 'requested ' + eta(p.elapsed) + ' ago' : ''].filter(Boolean).join(' · ');
-  return `<div class="psteps">${done}${phases ? `<span class="pgroup">${esc(PSTEP[p.pstep] || '')}:</span>${phases}` : cur}</div>${t ? `<div class="ptime">${esc(t)}</div>` : ''}`;
+  // A rebuild asked from the Deck is the PC's pipeline job itself: its step is p.step ('prepare'), not p.pstep.
+  return `<div class="psteps">${done}${phases ? `<span class="pgroup">${esc(PSTEP[p.pstep || p.step] || p.step_pt || '')}:</span>${phases}` : cur}</div>${t ? `<div class="ptime">${esc(t)}</div>` : ''}`;
 }
 function renderOrders() {
   const v = $('#v-orders');

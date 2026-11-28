@@ -1129,7 +1129,8 @@ function progressBar(p) {
   if (p && !p.total && (p.phase || p.step_pt)) {
     const pc = p.pct != null ? Math.min(100, p.pct) : null;
     const txt = [p.step_pt, p.phase].filter(Boolean).join(' · ');
-    return `<div class="progress ${pc == null ? 'ind' : ''}" title="${esc(txt)}"><div style="width:${pc == null ? 30 : pc.toFixed(1)}%"></div></div><span class="small muted">${esc(txt)}${pc != null ? ' · ' + pc.toFixed(0) + '%' : ''}${p.step_elapsed || p.elapsed ? ' · ' + etaText(p.step_elapsed || p.elapsed) : ''}</span>`;
+    const rate = pc != null && p.rate ? ' · ' + (p.rate / 1e6).toFixed(1) + ' MB/s' : '';  // extracting, downloading the DLC
+    return `<div class="progress ${pc == null ? 'ind' : ''}" title="${esc(txt)}"><div style="width:${pc == null ? 30 : pc.toFixed(1)}%"></div></div><span class="small muted">${esc(txt)}${pc != null ? ' · ' + pc.toFixed(0) + '%' : ''}${rate}${p.step_elapsed || p.elapsed ? ' · ' + etaText(p.step_elapsed || p.elapsed) : ''}</span>`;
   }
   if (!p || !p.total) return '';
   const pc = Math.min(100, 100 * p.done / p.total);
@@ -1948,6 +1949,7 @@ const SETTINGS = [
     ['own_dirs', 'Your game folders: dumps (a folder with default.xex), .iso, .7z/.zip/.rar or Xbox Live packages (one folder per line)', 'lines'],
     ['dlc_sources', 'DLC sources: a folder with an archive per game (.rar, .7z, .zip), or an archive.org item (its id or address), one per line. None: games are prepared without DLC', 'lines'],
     ['download_dir', 'Downloads folder'], ['work_dir', 'Folder for new games (prepare --work)'],
+    ['keep_archives', 'Keep downloaded archives (off: once a game is prepared and built, its archive and the copy extracted from it are removed; Prepare again downloads it again if it needs to; your own files are never removed)', 'bool'],
     ['work_roots', 'Folders with prepared games (one per line)', 'lines'],
     ['data_dir', 'App data (logs, covers, backups)'],
     ['max_downloads', 'Simultaneous downloads (restart the app)', 'int']]],

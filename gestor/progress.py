@@ -1,7 +1,7 @@
-"""O que um pipeline está a fazer agora, com o pormenor que os registos dão: extrair o arquivo, a
-atualização do jogo e os DLC a descarregar (com %), cada ronda da geração do código, as corridas do
-jogo para encontrar funções (N de 12), a compilação ([N/M] do ninja), o teste de arranque (segundos
-de 60), o Claude a corrigir (a última ferramenta que usou).
+"""O que um pipeline está a fazer agora, com o pormenor que os registos dão: extrair o arquivo e
+o disco ou pacote dele, a atualização do jogo e os DLC a descarregar (com % e MB/s), cada ronda da
+geração do código, as corridas do jogo para encontrar funções (N de 12), a compilação ([N/M] do
+ninja), o teste de arranque (segundos de 60), o Claude a corrigir (a última ferramenta que usou).
 
 pipeline.run guarda em job.result o passo, a tentativa e quando começou; isto lê o registo desse
 passo (e o build.log do ninja) cada vez que a página pergunta."""
@@ -13,6 +13,7 @@ from . import config
 # (padrão, fase, texto): a última linha que bate diz a fase em que o passo está.
 LINE = [
     (re.compile(r'^\s*7-Zip: (.+)$'), 'extract', lambda m: 'Extracting %s' % m.group(1)),
+    (re.compile(r'^\s*disc image (.+)$'), 'extract', lambda m: 'Extracting the disc image %s' % m.group(1)),
     (re.compile(r'^\s*STFS (\S+): (.+?) \('), 'extract', lambda m: 'Reading the package %s' % m.group(2)),
     (re.compile(r'downloading title update (\d+) \(([\d.]+) KB\)'), 'tu',
      lambda m: 'Downloading the title update (TU %s, %.1f MB)' % (m.group(1), float(m.group(2)) / 1024)),
@@ -64,7 +65,7 @@ def from_log(text, work):
     phase, txt, pct, rate, build_log = None, None, None, None, None
     for line in text.splitlines():
         m = PCT_LINE.match(line)
-        if m and phase == 'dlc':
+        if m and phase in ('extract', 'dlc'):  # ReXNative's meter.py: the extraction's and the download's
             pct, rate = float(m.group(1)), float(m.group(2)) * 1e6
             continue
         for rx, ph, fmt in LINE:
